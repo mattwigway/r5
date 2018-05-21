@@ -134,20 +134,6 @@ public class Path {
             LOG.error("Transit path computed without a transit segment!");
     }
 
-    // FIXME we are using a map with unorthodox definitions of hashcode and equals to make them serve as map keys.
-    // We should instead wrap Path or copy the relevant fields into a PatternSequenceKey class.
-
-    public int hashCode() {
-        return Arrays.hashCode(patterns);
-    }
-
-    public boolean equals(Object o) {
-        if (o instanceof Path) {
-            Path p = (Path) o;
-            return this == p || Arrays.equals(patterns, p.patterns);
-        } else return false;
-    }
-
     /**
      * Gets tripPattern at provided pathIndex
      * @param transitLayer
