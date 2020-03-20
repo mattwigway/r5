@@ -45,6 +45,11 @@ public abstract class InRoutingFareCalculator implements Serializable {
     // injected on load
     public transient TransitLayer transitLayer;
 
+    /** function to call after transitLayer has been injected */
+    public void initialize () {
+        // do nothing in base class
+    }
+
     public static Collater getCollator (ProfileRequest request){
         return (states, maxClockTime) -> {
             McRaptorState best = null;
