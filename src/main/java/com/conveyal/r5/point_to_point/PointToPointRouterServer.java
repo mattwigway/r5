@@ -1,6 +1,6 @@
 package com.conveyal.r5.point_to_point;
 
-import com.conveyal.r5.api.GraphQlRequest;
+import com.conveyal.r5.analyst.fare.ParetoServer;
 import com.conveyal.r5.api.util.BikeRentalStation;
 import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.api.util.ParkRideParking;
@@ -9,15 +9,12 @@ import com.conveyal.r5.common.GeoJsonFeature;
 import com.conveyal.r5.common.GeometryUtils;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.kryo.KryoNetworkSerializer;
-import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.point_to_point.builder.RouterInfo;
 import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.profile.ProfileRequest;
 import com.conveyal.r5.profile.StreetPath;
 import com.conveyal.r5.streets.*;
 import com.conveyal.r5.transit.TransportNetwork;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.ObjectReader;
 import org.locationtech.jts.geom.*;
 import org.locationtech.jts.operation.buffer.BufferParameters;
 import org.locationtech.jts.operation.buffer.OffsetCurveBuilder;
@@ -124,12 +121,14 @@ public class PointToPointRouterServer {
 
     private static void run(TransportNetwork transportNetwork) {
         port(DEFAULT_PORT);
-        ObjectMapper mapper = new ObjectMapper();
+        //ObjectMapper mapper = Json
         //ObjectReader is a new lightweight mapper which can only deserialize specified class
-        ObjectReader graphQlRequestReader = mapper.reader(GraphQlRequest.class);
-        ObjectReader mapReader = mapper.reader(HashMap.class);
+        //ObjectReader graphQlRequestReader = mapper.reader(GraphQlRequest.class);
+        //ObjectReader mapReader = mapper.reader(HashMap.class);
         staticFileLocation("debug-plan");
-        PointToPointQuery pointToPointQuery = new PointToPointQuery(transportNetwork);
+        //PointToPointQuery pointToPointQuery = new PointToPointQuery(transportNetwork);
+
+        ParetoServer paretoServer = new ParetoServer(transportNetwork);
 
         // add cors header
         before((req, res) -> res.header("Access-Control-Allow-Origin", "*"));
@@ -469,6 +468,8 @@ public class PointToPointRouterServer {
             }
             return content;
         }, JsonUtilities.objectMapper::writeValueAsString);
+
+        post("/pareto", paretoServer::handle);
 
         get("/seenStops", (request, response) -> {
             response.header("Content-Type", "application/json");
