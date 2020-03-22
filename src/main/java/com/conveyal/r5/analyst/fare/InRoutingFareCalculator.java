@@ -1,6 +1,7 @@
 package com.conveyal.r5.analyst.fare;
 
 import com.conveyal.gtfs.model.Fare;
+import com.conveyal.r5.analyst.fare.nyc.NYCInRoutingFareCalculator;
 import com.conveyal.r5.profile.FastRaptorWorker;
 import com.conveyal.r5.profile.McRaptorSuboptimalPathProfileRouter.McRaptorState;
 import com.conveyal.r5.profile.ProfileRequest;
@@ -14,9 +15,10 @@ import java.util.Map;
 import java.util.function.ToIntFunction;
 
 /**
+ * THIS COMMENT IS NO LONGER UP TO DATE - fare calculator need not be greedy, see
  * A fare calculator used in Analyst searches. It must be "greedy," i.e. boarding another vehicle should always cost a
  * nonnegative amount (0 is OK). The currency is not important as long as it is constant (i.e. the whole thing is in
- * dollars, yen, bitcoin or kina.
+ * dollars, yen, bitcoin or kina).
  *
  * Note that this fare calculator will be called on partial trips, both in the forward and (eventually) reverse directions.
  * Adding another ride should be monotonic - the fare should either increase or stay the same.
@@ -27,7 +29,8 @@ import java.util.function.ToIntFunction;
         @JsonSubTypes.Type(name = "bogota", value = BogotaInRoutingFareCalculator.class),
         @JsonSubTypes.Type(name = "chicago", value = ChicagoInRoutingFareCalculator.class),
         @JsonSubTypes.Type(name = "simple", value = SimpleInRoutingFareCalculator.class),
-        @JsonSubTypes.Type(name = "bogota-mixed", value = BogotaMixedInRoutingFareCalculator.class)
+        @JsonSubTypes.Type(name = "bogota-mixed", value = BogotaMixedInRoutingFareCalculator.class),
+        @JsonSubTypes.Type(name = "nyc", value = NYCInRoutingFareCalculator.class)
 })
 public abstract class InRoutingFareCalculator implements Serializable {
     public static final long serialVersionUID = 0L;
@@ -44,11 +47,6 @@ public abstract class InRoutingFareCalculator implements Serializable {
 
     // injected on load
     public transient TransitLayer transitLayer;
-
-    /** function to call after transitLayer has been injected */
-    public void initialize () {
-        // do nothing in base class
-    }
 
     public static Collater getCollator (ProfileRequest request){
         return (states, maxClockTime) -> {

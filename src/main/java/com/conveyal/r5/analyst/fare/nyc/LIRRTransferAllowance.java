@@ -17,6 +17,12 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.util.*;
 
+/**
+ * Calculates fares for and represents transfer allowances on the LIRR. One nice thing is that the LIRR is a small
+ * network, so we can be kinda lazy with how many journey prefixes get eliminated.
+ *
+ * Still to do: CityTicket/Atlantic Ticket.
+ */
 public class LIRRTransferAllowance extends TransferAllowance {
     private static final Logger LOG = LoggerFactory.getLogger(LIRRTransferAllowance.class);
     private static final Map<LIRRStop, TObjectIntMap<LIRRStop>> peakDirectFares = new HashMap<>();
@@ -98,7 +104,7 @@ public class LIRRTransferAllowance extends TransferAllowance {
                 // assuming you can change to another train in the same direction as if you never got off
                 thisDirectionPeak |= peak.get(i);
                 thisTicketPeak |= peak.get(i);
-                cumulativeFareThisTicket = (thisTicketPeak ? peakDirectFares : offpeakDirectFares).get(initialStop).get(alightStop);
+                cumulativeFareThisTicket = getDirectFare(initialStop, alightStop, thisTicketPeak);
             } else {
                 // this can only happen on the second or more ride of a ticket
                 if (!directions.get(i).equals(directions.get(i - 1))) {
@@ -113,15 +119,16 @@ public class LIRRTransferAllowance extends TransferAllowance {
                     } else {
                         // time to buy a new ticket
                         fareFromPreviousTickets += cumulativeFareThisTicket; // left over from last iteration
-                        thisTicketPeak = false;
-                        thisDirectionPeak = false;
+                        thisTicketPeak = peak.get(i);
+                        thisDirectionPeak = peak.get(i);
                         lastDirectionPeak = false;
                         initialStop = boardStop;
                         viaStop = null;
                         nDirectionChanges = 0;
                         initialDirection = direction;
 
-                        cumulativeFareThisTicket = (thisTicketPeak ? peakDirectFares : offpeakDirectFares).get(initialStop).get(alightStop);
+                        // not += as this is just the fare for _this_ ticket, which is a new ticket
+                        cumulativeFareThisTicket = getDirectFare(initialStop, alightStop, thisTicketPeak);
                         continue; // move to next ride
                     }
                 }
@@ -136,13 +143,16 @@ public class LIRRTransferAllowance extends TransferAllowance {
                     throw new NullPointerException("Via stop is null");
                 }
 
-                try {
-                    cumulativeFareThisTicket = (thisTicketPeak ? peakViaFares : offpeakViaFares).get(initialStop).get(viaStop).get(alightStop);
-                } catch (Exception e) {
-                    // TODO make this catch clause more specific
+                Map<LIRRStop, Map<LIRRStop, TObjectIntMap<LIRRStop>>> viaFares =
+                        thisTicketPeak ? peakViaFares : offpeakViaFares;
+
+                if (viaFares.containsKey(initialStop) && viaFares.get(initialStop).containsKey(viaStop) &&
+                        viaFares.get(initialStop).get(viaStop).containsKey(alightStop)) {
+                    cumulativeFareThisTicket = viaFares.get(initialStop).get(viaStop).get(alightStop);
+                } else {
                     // no via fare for this journey
-                    cumulativeFareThisTicket = (lastDirectionPeak ? peakDirectFares : offpeakDirectFares).get(initialStop).get(viaStop) +
-                            (thisDirectionPeak ? peakDirectFares : offpeakDirectFares).get(viaStop).get(alightStop);
+                    cumulativeFareThisTicket = getDirectFare(initialStop, viaStop, lastDirectionPeak) +
+                            getDirectFare(viaStop, alightStop, thisDirectionPeak);
                 }
             }
         }
@@ -153,6 +163,23 @@ public class LIRRTransferAllowance extends TransferAllowance {
         this.peakBeforeDirectionChange = (viaStop == null ? thisDirectionPeak : lastDirectionPeak);
         this.peakAfterDirectionChange = (viaStop == null ? false : thisDirectionPeak); // always set to false when there has been no direction change
         this.cumulativeFare = fareFromPreviousTickets + cumulativeFareThisTicket;
+
+        if (this.cumulativeFare == 0) {
+            LOG.warn("Cumulative fare for LIRR is zero!");
+        }
+    }
+
+    /** Get a direct fare, with error handling */
+    // TODO replace this entire function with the LIRR fare chart, and just use scraped values for via fare discounts
+    public int getDirectFare (LIRRStop fromStop, LIRRStop toStop, boolean peak) {
+        Map<LIRRStop, TObjectIntMap<LIRRStop>> fares = (peak ? peakDirectFares : offpeakDirectFares);
+
+        if (fares.containsKey(fromStop) && fares.get(fromStop).containsKey(toStop)) {
+            return fares.get(fromStop).get(toStop);
+        } else {
+            LOG.warn("Cannot compute fare from {} to {}", fromStop, toStop);
+            return 0;
+        }
     }
 
     /**
