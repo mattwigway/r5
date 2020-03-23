@@ -141,11 +141,13 @@ public class ParetoServer {
 
                     legs.add(new ParetoLeg(
                             network.transitLayer.routes.get(pattern.routeIndex),
+                            network.transitLayer.stopIdForIndex.get(pattern.stops[state.boardStopPosition]),
                             network.transitLayer.stopNames.get(pattern.stops[state.boardStopPosition]),
+                            network.transitLayer.stopIdForIndex.get(pattern.stops[state.alightStopPosition]),
                             network.transitLayer.stopNames.get(pattern.stops[state.alightStopPosition]),
                             state.boardTime,
-                            state.time
-                            ));
+                            state.time,
+                            state.fare.cumulativeFarePaid));
                 }
 
                 state = state.back;
@@ -158,17 +160,23 @@ public class ParetoServer {
 
     public static final class ParetoLeg {
         public final RouteInfo route;
-        public final String boardStop;
-        public final String alightStop;
+        public final String boardStopId;
+        public final String alightStopId;
+        public final String boardStopName;
+        public final String alightStopName;
         public final int boardTime;
         public final int alightTime;
+        public final int cumulativeFare;
 
-        public ParetoLeg(RouteInfo route, String boardStop, String alightStop, int boardTime, int alightTime) {
+        public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName, int boardTime, int alightTime, int cumulativeFare) {
             this.route = route;
-            this.boardStop = boardStop;
-            this.alightStop = alightStop;
+            this.boardStopId = boardStopId;
+            this.alightStopId = alightStopId;
+            this.boardStopName = boardStopName;
+            this.alightStopName = alightStopName;
             this.boardTime = boardTime;
             this.alightTime = alightTime;
+            this.cumulativeFare = cumulativeFare;
         }
     }
 }
