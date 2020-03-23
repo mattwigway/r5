@@ -1,8 +1,5 @@
 package com.conveyal.r5.analyst.fare;
 
-import com.conveyal.gtfs.model.Route;
-import com.conveyal.gtfs.model.Stop;
-import com.conveyal.gtfs.model.Trip;
 import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.profile.*;
@@ -145,8 +142,10 @@ public class ParetoServer {
                     legs.add(new ParetoLeg(
                             network.transitLayer.routes.get(pattern.routeIndex),
                             network.transitLayer.stopNames.get(pattern.stops[state.boardStopPosition]),
-                            network.transitLayer.stopNames.get(pattern.stops[state.alightStopPosition])
-                    ));
+                            network.transitLayer.stopNames.get(pattern.stops[state.alightStopPosition]),
+                            state.boardTime,
+                            state.time
+                            ));
                 }
 
                 state = state.back;
@@ -161,11 +160,15 @@ public class ParetoServer {
         public final RouteInfo route;
         public final String boardStop;
         public final String alightStop;
+        public final int boardTime;
+        public final int alightTime;
 
-        public ParetoLeg(RouteInfo route, String boardStop, String alightStop) {
+        public ParetoLeg(RouteInfo route, String boardStop, String alightStop, int boardTime, int alightTime) {
             this.route = route;
             this.boardStop = boardStop;
             this.alightStop = alightStop;
+            this.boardTime = boardTime;
+            this.alightTime = alightTime;
         }
     }
 }
