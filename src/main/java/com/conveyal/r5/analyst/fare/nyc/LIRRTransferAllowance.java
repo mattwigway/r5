@@ -3,10 +3,17 @@ package com.conveyal.r5.analyst.fare.nyc;
 import com.conveyal.r5.analyst.fare.TransferAllowance;
 import com.conveyal.r5.profile.McRaptorSuboptimalPathProfileRouter;
 import com.csvreader.CsvReader;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
+import gnu.trove.iterator.TIntIterator;
+import gnu.trove.iterator.TObjectIntIterator;
+import gnu.trove.map.TIntIntMap;
+import gnu.trove.map.TIntObjectMap;
 import gnu.trove.map.TObjectDoubleMap;
 import gnu.trove.map.TObjectIntMap;
+import gnu.trove.map.hash.TIntIntHashMap;
+import gnu.trove.map.hash.TIntObjectHashMap;
 import gnu.trove.map.hash.TObjectDoubleHashMap;
 import gnu.trove.map.hash.TObjectIntHashMap;
 import org.slf4j.Logger;
@@ -18,31 +25,72 @@ import java.nio.charset.Charset;
 import java.util.*;
 
 /**
- * Calculates fares for and represents transfer allowances on the LIRR. One nice thing is that the LIRR is a small
- * network, so we can be kinda lazy with how many journey prefixes get eliminated.
+ * Calculates fares for and represents transfer allowances on the MTA Long Island Rail Road. One nice thing is that the LIRR is a small
+ * network, so we can be kinda lazy with how many journey prefixes get eliminated - we only consider journey prefixes compareble
+ * under the more strict domination rules (Theorem 3.2 in the paper at https://files.indicatrix.org/Conway-Stewart-2019-Charlie-Fare-Constraints.pdf)
+ * if they boarded at the same stop, alighted at the same stop, used the same stop to transfer from inbound to outbound
+ * (if there was an opposite-direction transfer), and used the same combination of peak/offpeak services.
+ *
+ * LIRR fares are really complicated, because of complex and undocumented transfer rules. The fare chart is available at
+ * http://web.mta.info/lirr/about/TicketInfo/Fares.htm, but it does not include anything about fares where you have to ride
+ * inbound and then outbound (for instance, based on the fare chart, Montauk to Greenport on the eastern end of Long
+ * Island are both in Zone 14, and thus should be a $3.25 fare, but to get between them, you have to ride at least to
+ * Bethpage (Zone 7). So there must be a more expensive fare, because otherwise anyone who was going from Montauk to Babylon,
+ * say, would just say they were planning to transfer and go back outbound.
+ *
+ * LIRR deals with this situation by specifying via fares. They have no documentation on these that I can find, so I
+ * scraped them from their fare calculator at lirr42.mta.info. For the Montauk to Greenport trip described above, for
+ * example, the fare calculator returns that a trip via Jamaica is 31.75 (offpeak), and a trip via Hicksville is 28.00
+ * (offpeak). This is still ambiguous - what if you make a trip from Montauk to Greenport but change at Bethpage instead
+ * of Hicksville? We are assuming that in this case, you would be able to use the via fare for Hicksville.
+ *
+ * If there is a
+ * via fare for a station specified, we assume that it can also be used for any station closer to the origin/destination
+ * than the via station. We define closer as being that that station is reachable from the via station via only outbound
+ * trains in the common Inbound-Outbound transfer case, and reachable via only inbound trains in the rare Outbound-Inbound
+ * case. If there is no via fare specified, we use two one-way tickets. (The second ticket may be a via fare if there is
+ * another opposite direction transfer, for instance Hicksville to Oceanside via Babylon and Lynbrook, but otherwise we
+ * use via fares greedily. For an A-B-C-D trip, if there is a via fare from A to C via B, we will buy an ABC and a CD fare
+ * even if AB and BCD would be cheaper.)
+ *
+ * This is further complicated by the fact that there are other transfers that are not via transfers. For example, to
+ * travel from Atlantic Terminal to Ronkonkoma on LIRR train 2000, you must change at Jamaica. We thus assume that you
+ * can change between any two trains anywhere and as long as you continue to travel in the same direction, it is treated
+ * as a single ride for fare calculation purposes.
  *
  * Still to do: CityTicket/Atlantic Ticket.
+ *
+ * @author mattwigway
  */
 public class LIRRTransferAllowance extends TransferAllowance {
     private static final Logger LOG = LoggerFactory.getLogger(LIRRTransferAllowance.class);
-    private static final Map<LIRRStop, TObjectIntMap<LIRRStop>> peakDirectFares = new HashMap<>();
-    private static final Map<LIRRStop, TObjectIntMap<LIRRStop>> offpeakDirectFares = new HashMap<>();
+    private static final TIntObjectMap<TIntIntMap> peakDirectFares = new TIntObjectHashMap<>();
+    private static final TIntObjectMap<TIntIntMap> offpeakDirectFares = new TIntObjectHashMap<>();
+
+    /** Map from fromStop, toStop, viaStop to fare. Via is last because we allow trips with unmatched via stop to match to other via stop */
     private static final Map<LIRRStop, Map<LIRRStop, TObjectIntMap<LIRRStop>>> peakViaFares = new HashMap<>();
     private static final Map<LIRRStop, Map<LIRRStop, TObjectIntMap<LIRRStop>>> offpeakViaFares = new HashMap<>();
-    private static final Set<LIRRStop> viaStops = new HashSet<>();
-    /** if a stop pair is present in this set, the second stop can be reached by only inbound trains from the first stop */
-    private static final Multimap<LIRRStop, LIRRStop> inboundDownstreamStops = HashMultimap.create();
-    /** if a stop pair is present in this set, the second stop can be reached by only outbound trains from the first stop */
-    private static final Multimap<LIRRStop, LIRRStop> outboundDownstreamStops = HashMultimap.create();
+
+    /** map from stop to fare zone */
+    private static final TObjectIntMap<LIRRStop> fareZoneForStop = new TObjectIntHashMap<>();
 
     private static int maxLirrFareTemp = 0;
 
     /** the maximum fare to travel anywhere in the LIRR system */
     public static final int MAX_LIRR_FARE;
 
+    /** if a stop pair is present in this set, the second stop can be reached by only inbound trains from the first stop */
+    @VisibleForTesting
+    static final Multimap<LIRRStop, LIRRStop> inboundDownstreamStops = HashMultimap.create();
+
+    /** if a stop pair is present in this set, the second stop can be reached by only outbound trains from the first stop */
+    @VisibleForTesting
+    static final Multimap<LIRRStop, LIRRStop> outboundDownstreamStops = HashMultimap.create();
+
     static {
         loadDirectFares();
         loadViaFares();
+        loadZones();
         loadDownstream();
         MAX_LIRR_FARE = maxLirrFareTemp;
     }
@@ -68,7 +116,6 @@ public class LIRRTransferAllowance extends TransferAllowance {
     /** Was a peak train ridden after any opposite-direction transfer, always false if there was no direction change */
     public final boolean peakAfterDirectionChange;
 
-
     /**
      * Compute an LIRR fare. Currently assumes that if any journey in the sequence is a peak journey, the peak fare will
      * be charged for the entire journey. It might be possible to get a cheaper fare by combining an off-peak and peak fare
@@ -85,7 +132,7 @@ public class LIRRTransferAllowance extends TransferAllowance {
             throw new IllegalArgumentException("Empty LIRR stop list!");
         }
         // main fare calculation loop
-        int fareFromPreviousTickets = 0; // some complex LIRR journeys, with more than one direction change, require multiple tickets
+        int fareFromPreviousTickets = 0; // some complex LIRR journeys require multiple tickets
         int cumulativeFareThisTicket = 0;
         LIRRStop initialStop = boardStops.get(0); // source stop of current LIRR *ticket*
         LIRRDirection initialDirection = directions.get(0); // source direction of current LIRR *ticket*
@@ -143,19 +190,30 @@ public class LIRRTransferAllowance extends TransferAllowance {
                     throw new NullPointerException("Via stop is null");
                 }
 
-                Map<LIRRStop, Map<LIRRStop, TObjectIntMap<LIRRStop>>> viaFares =
-                        thisTicketPeak ? peakViaFares : offpeakViaFares;
-
-                if (viaFares.containsKey(initialStop) && viaFares.get(initialStop).containsKey(viaStop) &&
-                        viaFares.get(initialStop).get(viaStop).containsKey(alightStop)) {
-                    cumulativeFareThisTicket = viaFares.get(initialStop).get(viaStop).get(alightStop);
-                } else {
-                    // no via fare for this journey
-                    cumulativeFareThisTicket = getDirectFare(initialStop, viaStop, lastDirectionPeak) +
-                            getDirectFare(viaStop, alightStop, thisDirectionPeak);
+                try {
+                    cumulativeFareThisTicket = getViaFare(initialStop, alightStop, viaStop, lastDirectionPeak,
+                            thisDirectionPeak, initialDirection);
+                } catch (NoMatchingViaFareException e) {
+                    // buy a new ticket for the second part of this ride
+                    // it is important to do this, rather than just calculate a quasi-via fare as the sum of the two
+                    // non-via fares, so that you can get a discounted transfer on the second ticket.
+                    // For instance, Hicksville to Oceanside by way of Babylon and Lynbrook might be cheapest using a
+                    // one-way ticket from Hicksville to Babylon, then a via fare from Babylon to Oceanside via Lynbrook.
+                    // While we generally assume greedy purchasing because otherwise the algorithm becomes really difficult,
+                    // if the first ride requires a separate ticket, there's no reason to force no transfer after the second.
+                    fareFromPreviousTickets += getDirectFare(initialStop, viaStop, lastDirectionPeak);
+                    thisTicketPeak = thisDirectionPeak;
+                    // thisDirectionPeak is unchanged
+                    lastDirectionPeak = false; // reset
+                    initialStop = viaStop;
+                    viaStop = null;
+                    nDirectionChanges = 0;
+                    initialDirection = direction;
+                    cumulativeFareThisTicket = getDirectFare(viaStop, alightStop, thisDirectionPeak);
                 }
             }
         }
+
         this.boardStop = initialStop; // for this ticket
         this.viaStop = viaStop;
         this.initialDirection = initialDirection;
@@ -170,15 +228,79 @@ public class LIRRTransferAllowance extends TransferAllowance {
     }
 
     /** Get a direct fare, with error handling */
-    // TODO replace this entire function with the LIRR fare chart, and just use scraped values for via fare discounts
-    public int getDirectFare (LIRRStop fromStop, LIRRStop toStop, boolean peak) {
-        Map<LIRRStop, TObjectIntMap<LIRRStop>> fares = (peak ? peakDirectFares : offpeakDirectFares);
+    public static int getDirectFare (LIRRStop fromStop, LIRRStop toStop, boolean peak) {
+        int fromZone = fareZoneForStop.get(fromStop);
+        int toZone = fareZoneForStop.get(toStop);
+        int fare = (peak ? peakDirectFares : offpeakDirectFares).get(fromZone).get(toZone);
 
-        if (fares.containsKey(fromStop) && fares.get(fromStop).containsKey(toStop)) {
-            return fares.get(fromStop).get(toStop);
+        if (fare == 0) throw new IllegalArgumentException("fare zones not found!");
+
+        return fare;
+    }
+
+    /** Get fare for a trip that changed from inbound to outbound or vice versa */
+    public static int getViaFare (LIRRStop fromStop, LIRRStop toStop, LIRRStop viaStop, boolean lastDirectionPeak,
+                           boolean thisDirectionPeak, LIRRDirection initialDirection) throws NoMatchingViaFareException {
+        Map<LIRRStop, Map<LIRRStop, TObjectIntMap<LIRRStop>>> viaFares =
+                (lastDirectionPeak || thisDirectionPeak) ? peakViaFares : offpeakViaFares;
+
+        int twoTicketFare = getDirectFare(fromStop, viaStop, lastDirectionPeak) +
+                getDirectFare(viaStop, toStop, thisDirectionPeak);
+
+        if (viaFares.containsKey(fromStop) && viaFares.get(fromStop).containsKey(toStop)) {
+            TObjectIntMap<LIRRStop> viaFaresForOriginDestination = viaFares.get(fromStop).get(toStop);
+
+            int viaFare;
+            if (viaFaresForOriginDestination.containsKey(viaStop)) {
+                // ah, good, there is a fare for exactly this ride
+                viaFare = viaFaresForOriginDestination.get(viaStop);
+            } else {
+                // allow via fares to be used even when not transferring at specific locations. Use the cheapest via
+                // fare that transfers at a stop "upstream" of the stop. But only use this calculation method for
+                // transfers from inbound to outbound
+                viaFare = Integer.MAX_VALUE;
+                boolean found = false;
+
+                for (TObjectIntIterator<LIRRStop> fareIterator = viaFaresForOriginDestination.iterator();
+                     fareIterator.hasNext(); ) {
+                    fareIterator.advance();
+
+                    LIRRStop fareViaStop = fareIterator.key();
+
+                    Multimap<LIRRStop, LIRRStop> downstreamStops;
+                    if (initialDirection == LIRRDirection.INBOUND) {
+                        // not backwards - we can apply the via fare for transfers at any stop that is "outbound of"
+                        // the specified via stop, when we started inbound.
+                        downstreamStops = outboundDownstreamStops;
+                    } else if (initialDirection == LIRRDirection.OUTBOUND) {
+                        downstreamStops = inboundDownstreamStops;
+                    } else {
+                        throw new IllegalArgumentException("Impossible direction for LIRR");
+                    }
+
+                    if (downstreamStops.containsEntry(fareViaStop, viaStop)) {
+                        // this via fare can be applies to this viaStop, get cheapest
+                        viaFare = Math.min(fareIterator.value(), viaFare);
+                        found = true;
+                    }
+                }
+
+                if (!found) throw new NoMatchingViaFareException();
+            }
+
+            if (twoTicketFare < viaFare) {
+                LOG.warn("Travel from {} to {} via {} is cheaper by buying two tickets than using via fare",
+                        fromStop, toStop, viaStop);
+                throw new NoMatchingViaFareException(); // force new ticket purchase
+            }
+
+            if (viaFare == 0) {
+                throw new InternalError("LIRR via fare is zero!"); // sanity check, should not be possible
+            }
+
+            return viaFare;
         } else {
-            LOG.warn("Cannot compute fare from {} to {}", fromStop, toStop);
-            return 0;
+            throw new NoMatchingViaFareException();
         }
     }
 
@@ -218,18 +340,20 @@ public class LIRRTransferAllowance extends TransferAllowance {
     private static void loadDirectFares () {
         InputStream is = null;
         try {
-            is = LIRRTransferAllowance.class.getClassLoader().getResourceAsStream("fares/nyc/lirr/direct_fares.csv");
+            is = LIRRTransferAllowance.class.getClassLoader().getResourceAsStream("fares/nyc/lirr/lirr_zonal_fares.csv");
             CsvReader rdr = new CsvReader(is, ',', Charset.forName("UTF-8"));
             rdr.readHeaders();
             while (rdr.readRecord()) {
-                LIRRStop fromStop = LIRRStop.valueOf(rdr.get("from_stop_id").toUpperCase(Locale.US));
-                LIRRStop toStop = LIRRStop.valueOf(rdr.get("to_stop_id").toUpperCase(Locale.US));
+                int fromZone = Integer.parseInt(rdr.get("from_zone"));
+                int toZone = Integer.parseInt(rdr.get("to_zone"));
                 int fare = Integer.parseInt(rdr.get("amount"));
                 maxLirrFareTemp = Math.max(maxLirrFareTemp, fare);
                 if (rdr.get("peak").equals("True")) {
-                    peakDirectFares.computeIfAbsent(fromStop, k -> new TObjectIntHashMap<>()).put(toStop, fare);
+                    if (!peakDirectFares.containsKey(fromZone)) peakDirectFares.put(fromZone, new TIntIntHashMap());
+                    peakDirectFares.get(fromZone).put(toZone, fare);
                 } else {
-                    offpeakDirectFares.computeIfAbsent(fromStop, k -> new TObjectIntHashMap<>()).put(toStop, fare);
+                    if (!offpeakDirectFares.containsKey(fromZone)) offpeakDirectFares.put(fromZone, new TIntIntHashMap());
+                    offpeakDirectFares.get(fromZone).put(toZone, fare);
                 }
             }
         } catch (IOException e) {
@@ -254,24 +378,51 @@ public class LIRRTransferAllowance extends TransferAllowance {
                 LIRRStop toStop = LIRRStop.valueOf(rdr.get("to_stop_id").toUpperCase(Locale.US));
                 LIRRStop viaStop = LIRRStop.valueOf(rdr.get("via_stop_id").toUpperCase(Locale.US));
 
-                viaStops.add(viaStop);
-
                 int fare = Integer.parseInt(rdr.get("amount"));
                 maxLirrFareTemp = Math.max(maxLirrFareTemp, fare);
 
                 if (rdr.get("peak").equals("True")) {
-                    peakViaFares.computeIfAbsent(fromStop, k -> new HashMap<>()).computeIfAbsent(viaStop, k -> new TObjectIntHashMap<>()).put(toStop, fare);
+                    peakViaFares.computeIfAbsent(fromStop, k -> new HashMap<>()).computeIfAbsent(toStop, k -> new TObjectIntHashMap<>()).put(viaStop, fare);
                 } else {
-                    offpeakViaFares.computeIfAbsent(fromStop, k -> new HashMap<>()).computeIfAbsent(viaStop, k -> new TObjectIntHashMap<>()).put(toStop, fare);
+                    offpeakViaFares.computeIfAbsent(fromStop, k -> new HashMap<>()).computeIfAbsent(toStop, k -> new TObjectIntHashMap<>()).put(viaStop, fare);
                 }
             }
         } catch (IOException e) {
-            LOG.error("IO Exception reading LIRR Direct Fares CSV", e);
+            LOG.error("IO Exception reading LIRR Via Fares CSV", e);
         } finally {
             try {
                 is.close();
             } catch (IOException e) {
-                LOG.error("IO Exception closing LIRR Direct Fares CSV", e);
+                LOG.error("IO Exception closing LIRR Via Fares CSV", e);
+            }
+        }
+    }
+
+    /** Create the stop to fare zone mapping */
+    private static void loadZones () {
+        InputStream is = null;
+        try {
+            is = LIRRTransferAllowance.class.getClassLoader().getResourceAsStream("fares/nyc/lirr/lirr_stops_fare_zones.csv");
+            CsvReader rdr = new CsvReader(is, ',', Charset.forName("UTF-8"));
+            rdr.readHeaders();
+            while (rdr.readRecord()) {
+                String stopId = rdr.get("stop_id").toUpperCase(Locale.US);
+                LIRRStop stop = null;
+                try {
+                    stop = LIRRStop.valueOf(stopId);
+                } catch (IllegalArgumentException e) {
+                    LOG.warn("LIRR stop {} from fare zones CSV not found (possibly a holiday-only stop)", stopId);
+                }
+                int fareZone = Integer.parseInt(rdr.get("fare_area"));
+                fareZoneForStop.put(stop, fareZone);
+            }
+        } catch (IOException e) {
+            LOG.error("IO Exception reading LIRR Via Fares CSV", e);
+        } finally {
+            try {
+                is.close();
+            } catch (IOException e) {
+                LOG.error("IO Exception closing LIRR Via Fares CSV", e);
             }
         }
     }
@@ -303,6 +454,10 @@ public class LIRRTransferAllowance extends TransferAllowance {
                 LOG.error("IO Exception closing LIRR Direct Fares CSV", e);
             }
         }
+    }
+
+    private static final class NoMatchingViaFareException extends Exception {
+
     }
 
     public static enum LIRRDirection {

@@ -10,7 +10,7 @@ public class NYCTransferAllowance extends TransferAllowance {
     public final LIRRTransferAllowance lirr;
 
     public NYCTransferAllowance (LIRRTransferAllowance lirr) {
-        super();
+        super(lirr != null ? lirr.getMaxTransferAllowance() : 0, Integer.MAX_VALUE, Integer.MAX_VALUE);
         this.lirr = lirr;
     }
 
