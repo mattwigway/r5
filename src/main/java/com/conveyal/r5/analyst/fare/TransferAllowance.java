@@ -20,6 +20,7 @@ public class TransferAllowance {
     /**
     In the paper, value is referred to as "maximum transfer allowance" to emphasize that not all the value of the
      transfer allowance may be realized.
+     TODO RENAME THIS FIELD
      */
     public final int value;
     public final int number;
