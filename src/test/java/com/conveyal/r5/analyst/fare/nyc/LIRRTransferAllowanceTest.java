@@ -10,13 +10,23 @@ import java.util.List;
 
 public class LIRRTransferAllowanceTest extends TestCase {
     @Test
-    public void testLirrFares () {
+    public void testSyossetHempsteadFares () {
         // Journey from Syosset to Hempstead via Jamaica and East New York
         // yes, you'd ordinarily just change at Jamaica, but for some reason the router thinks this is cheaper (a bug)
         // Fare should be 14 for Syosset to E NY at peak + 9.25 offpeak for E NY to Hempstead= 23.25 (no via fares here)
         assertEquals(2325, computeFare(
-                new LIRRStop[] { LIRRStop.LIRR205, LIRRStop.LIRR102, LIRRStop.LIRR50, LIRRStop.LIRR84 },
-                new boolean[] { true, true, false }
+                new LIRRStop[]{LIRRStop.LIRR205, LIRRStop.LIRR102, LIRRStop.LIRR50, LIRRStop.LIRR84},
+                new boolean[]{true, true, false}
+        ).cumulativeFare);
+
+    }
+
+    @Test
+    public void testPortWashingtonBayShoreFares () {
+        // Port Washington to Bay Shore via Woodside, 2225 peak fare
+        assertEquals(2225, computeFare(
+                new LIRRStop[] { LIRRStop.LIRR171, LIRRStop.LIRR214, LIRRStop.LIRR27, LIRRStop.LIRR26 },
+                new boolean[] { false, true, false }
         ).cumulativeFare);
     }
 
