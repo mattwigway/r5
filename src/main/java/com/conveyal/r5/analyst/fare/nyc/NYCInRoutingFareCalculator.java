@@ -287,6 +287,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             String thisFareArea = fareData.fareAreaForStop.get(to);
             // both in the same fare area (behind gates)
             // okay to use == here since fare areas are interned - warning can be ignored
+            //noinspection StringEquality
             return previousFareArea == thisFareArea;
         }
     }
