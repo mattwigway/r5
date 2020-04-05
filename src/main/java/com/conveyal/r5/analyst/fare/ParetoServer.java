@@ -4,11 +4,13 @@ import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.profile.*;
 import com.conveyal.r5.streets.StreetRouter;
+import com.conveyal.r5.streets.VertexStore;
 import com.conveyal.r5.transit.RouteInfo;
 import com.conveyal.r5.transit.TransportNetwork;
 import com.conveyal.r5.transit.TripPattern;
 import gnu.trove.iterator.TIntObjectIterator;
 import gnu.trove.map.TIntIntMap;
+import org.locationtech.jts.geom.Coordinate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -139,15 +141,26 @@ public class ParetoServer {
                 if (state.pattern != -1) {
                     TripPattern pattern = network.transitLayer.tripPatterns.get(state.pattern);
 
+                    int boardStopIndex = pattern.stops[state.boardStopPosition];
+                    int alightStopIndex = pattern.stops[state.alightStopPosition];
+
+                    Coordinate boardStopCoord = network.transitLayer.getCoordinateForStopFixed(boardStopIndex);
+                    Coordinate alightStopCoord = network.transitLayer.getCoordinateForStopFixed(alightStopIndex);
+
                     legs.add(new ParetoLeg(
                             network.transitLayer.routes.get(pattern.routeIndex),
-                            network.transitLayer.stopIdForIndex.get(pattern.stops[state.boardStopPosition]),
-                            network.transitLayer.stopNames.get(pattern.stops[state.boardStopPosition]),
-                            network.transitLayer.stopIdForIndex.get(pattern.stops[state.alightStopPosition]),
-                            network.transitLayer.stopNames.get(pattern.stops[state.alightStopPosition]),
+                            network.transitLayer.stopIdForIndex.get(boardStopIndex),
+                            network.transitLayer.stopNames.get(boardStopIndex),
+                            network.transitLayer.stopIdForIndex.get(alightStopIndex),
+                            network.transitLayer.stopNames.get(alightStopIndex),
                             state.boardTime,
                             state.time,
-                            state.fare.cumulativeFarePaid));
+                            state.fare.cumulativeFarePaid,
+                            boardStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                            boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                            alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                            alightStopCoord.getX() / VertexStore.FIXED_FACTOR
+                            ));
                 }
 
                 state = state.back;
@@ -168,7 +181,14 @@ public class ParetoServer {
         public final int alightTime;
         public final int cumulativeFare;
 
-        public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName, int boardTime, int alightTime, int cumulativeFare) {
+        public final double boardStopLat;
+        public final double boardStopLon;
+        public final double alightStopLat;
+        public final double alightStopLon;
+
+        public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName,
+                         int boardTime, int alightTime, int cumulativeFare, double boardStopLat, double boardStopLon,
+                         double alightStopLat, double alightStopLon) {
             this.route = route;
             this.boardStopId = boardStopId;
             this.alightStopId = alightStopId;
@@ -177,6 +197,10 @@ public class ParetoServer {
             this.boardTime = boardTime;
             this.alightTime = alightTime;
             this.cumulativeFare = cumulativeFare;
+            this.boardStopLat = boardStopLat;
+            this.boardStopLon = boardStopLon;
+            this.alightStopLat = alightStopLat;
+            this.alightStopLon = alightStopLon;
         }
     }
 }
