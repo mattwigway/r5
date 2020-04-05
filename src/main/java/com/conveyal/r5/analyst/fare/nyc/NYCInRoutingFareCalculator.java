@@ -105,6 +105,12 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             NYCPatternType patternType = fareData.patternTypeForPattern[pattern];
             boolean withinGatesSubwayTransfer = false; // set to true for free within-gates subway transfers
 
+            if (i > 0) {
+                // Don't do this at the end of the loop since there is short-circuit logic (continue) below
+                previousAlightStop = alightStops.get(i - 1);
+                previousPatternType = fareData.patternTypeForPattern[patterns.get(i - 1)];
+            }
+
             // ===== CLEAN UP AFTER LAST RIDE =====
             // PAY FARE UPON LEAVING THE LIRR
             if (lirrBoardStops != null && !NYCPatternType.LIRR_OFFPEAK.equals(patternType) &&
@@ -250,10 +256,6 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             } else {
                 throw new IllegalStateException("Unrecognized pattern type!");
             }
-
-            // PREPARE FOR NEXT ITERATION
-            previousAlightStop = alightStop;
-            previousPatternType = patternType;
         }
 
         // IF WE ENDED ON THE LIRR, ADD THE FARE AND RECORD THE FARE SO FAR
@@ -287,8 +289,8 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             String thisFareArea = fareData.fareAreaForStop.get(to);
             // both in the same fare area (behind gates)
             // okay to use == here since fare areas are interned - warning can be ignored
-            //noinspection StringEquality
-            return previousFareArea == thisFareArea;
+            //noinspection StringEquality,ConditionCoveredByFurtherCondition
+            return previousFareArea != null && thisFareArea != null && previousFareArea == thisFareArea;
         }
     }
 
