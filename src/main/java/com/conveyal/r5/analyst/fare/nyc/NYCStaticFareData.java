@@ -2,14 +2,16 @@ package com.conveyal.r5.analyst.fare.nyc;
 
 import com.csvreader.CsvReader;
 import com.google.common.collect.Sets;
+import gnu.trove.map.TObjectIntMap;
+import gnu.trove.map.hash.TObjectIntHashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import static com.conveyal.r5.analyst.fare.nyc.NYCInRoutingFareCalculator.NYCPatternType;
 
 /** A class that contains a bunch of static data about fares in NYC */
 public class NYCStaticFareData {
@@ -17,6 +19,20 @@ public class NYCStaticFareData {
     public static final int EXPRESS_BUS_FARE = 675;
     public static final int EXPRESS_BUS_UPGRADE = 375;
     public static final int METROCARD_TRANSFER_VALIDITY_TIME_SECONDS = 2 * 60 * 60;
+
+    public static final TObjectIntMap<NYCPatternType> METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE =
+            new TObjectIntHashMap<>();
+
+    static {
+        // due to a likely mistake in the NYC transfer system, transferring from a 2.75 subway/bus to a 6.75 express bus
+        // is a 3.75 upgrade, meaning that subway + express bus = 2.75 + 3.75 = 6.50. I suspect they meant to make the
+        // transfer amount 4.25 and they messed up on the math. Anyhow, that means that max transfer allowance from the
+        // subway/local bus is 3.00...
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_SUBWAY, 300);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_LOCAL_BUS, 300);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.STATEN_ISLAND_RWY, 300);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_EXPRESS_BUS, 275);
+    }
 
     private static final Logger LOG = LoggerFactory.getLogger(NYCStaticFareData.class);
 

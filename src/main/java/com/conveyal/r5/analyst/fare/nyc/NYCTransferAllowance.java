@@ -14,12 +14,37 @@ public class NYCTransferAllowance extends TransferAllowance {
 
     public NYCTransferAllowance(LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource,
                                 int metrocardTransferExpiry, boolean leftSubwayPaidArea) {
-        super(lirr != null ? lirr.getMaxTransferAllowance() : 0, Integer.MAX_VALUE, Integer.MAX_VALUE);
+        // only the value needs to be set correctly. The expiration time and number of transfers left are only used in
+        // the second domination rule, which we override in atLeastAsGoodForAllFutureRedemptions
+        super(computeMaxTransferAllowance(lirr, metrocardTransferSource), Integer.MAX_VALUE, Integer.MAX_VALUE);
         this.lirr = lirr;
         this.metrocardTransferSource = metrocardTransferSource;
         this.metrocardTransferExpiry = metrocardTransferExpiry;
         this.leftSubwayPaidArea = leftSubwayPaidArea;
     }
+
+    /**
+     * Compute max transfer allowance. Static single function to trick JVM into letting us run it in the constructor
+     * before the super() call.
+     *
+     * Note that we are adding the max transfer allowance from each different type of ticket, because max transfer
+     * allowance is for the entire suffix, and you could conceivably hold multiple transfer slips simultaneously.
+     */
+    private static int computeMaxTransferAllowance (LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource) {
+        int maxTransferAllowance = 0;
+
+        // adding these is correct because you could conceivably get multiple independent transfers from one prefix, e.g.
+        // another LIRR transfer and then a metrocard transfer held over from before. Remember in that paper that max
+        // transfer allowance is max for any suffix, not for any single transfer.
+        if (lirr != null) maxTransferAllowance += lirr.getMaxTransferAllowance();
+        if (metrocardTransferSource != null) {
+            maxTransferAllowance +=
+                    NYCStaticFareData.METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.get(metrocardTransferSource);
+        }
+
+        return maxTransferAllowance;
+    }
+
 
     @Override
     public boolean atLeastAsGoodForAllFutureRedemptions(TransferAllowance other) {
