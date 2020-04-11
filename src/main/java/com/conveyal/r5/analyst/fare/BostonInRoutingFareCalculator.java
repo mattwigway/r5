@@ -252,6 +252,9 @@ public class BostonInRoutingFareCalculator extends InRoutingFareCalculator {
             }
         }
 
+        // state resulting from transfer to destination
+        if (state.stop == -1) state = state.back;
+
         // Initialize: haven't boarded, paid a fare, or received a transfer allowance
         int cumulativeFarePaid = 0;
         BostonTransferAllowance transferAllowance = noTransferAllowance;
