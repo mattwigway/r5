@@ -1,6 +1,7 @@
 package com.conveyal.r5.analyst.fare;
 
 import com.conveyal.r5.api.util.LegMode;
+import com.conveyal.r5.common.GeometryUtils;
 import com.conveyal.r5.common.JsonUtilities;
 import com.conveyal.r5.profile.*;
 import com.conveyal.r5.streets.StreetRouter;
@@ -11,6 +12,7 @@ import com.conveyal.r5.transit.TripPattern;
 import gnu.trove.iterator.TIntObjectIterator;
 import gnu.trove.map.TIntIntMap;
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.LineString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -47,6 +49,7 @@ public class ParetoServer {
 
         LOG.info("Performing multiobjective transit routing");
         long startTime = System.currentTimeMillis();
+        profileRequest.maxTripDurationMinutes = 120; // hack
         IntFunction<DominatingList> listSupplier =
                 (departureTime) -> new FareDominatingList(
                         profileRequest.inRoutingFareCalculator,
@@ -147,6 +150,14 @@ public class ParetoServer {
                     Coordinate boardStopCoord = network.transitLayer.getCoordinateForStopFixed(boardStopIndex);
                     Coordinate alightStopCoord = network.transitLayer.getCoordinateForStopFixed(alightStopIndex);
 
+                    List<Coordinate> coords = new ArrayList<>();
+                    List<LineString> hops = pattern.getHopGeometries(network.transitLayer);
+                    for (int i = state.boardStopPosition; i < state.alightStopPosition; i++) { // hop i is from stop i to i + 1, don't include last stop index
+                        LineString hop = hops.get(i);
+                        for (Coordinate c : hop.getCoordinates()) coords.add(c);
+                    }
+                    LineString shape = GeometryUtils.geometryFactory.createLineString(coords.toArray(new Coordinate[coords.size()]));
+
                     legs.add(new ParetoLeg(
                             network.transitLayer.routes.get(pattern.routeIndex),
                             network.transitLayer.stopIdForIndex.get(boardStopIndex),
@@ -159,7 +170,8 @@ public class ParetoServer {
                             boardStopCoord.getY() / VertexStore.FIXED_FACTOR,
                             boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
                             alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                            alightStopCoord.getX() / VertexStore.FIXED_FACTOR
+                            alightStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                            shape
                             ));
                 }
 
@@ -180,6 +192,7 @@ public class ParetoServer {
         public final int boardTime;
         public final int alightTime;
         public final int cumulativeFare;
+        public final LineString geom;
 
         public final double boardStopLat;
         public final double boardStopLon;
@@ -188,7 +201,7 @@ public class ParetoServer {
 
         public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName,
                          int boardTime, int alightTime, int cumulativeFare, double boardStopLat, double boardStopLon,
-                         double alightStopLat, double alightStopLon) {
+                         double alightStopLat, double alightStopLon, LineString geom) {
             this.route = route;
             this.boardStopId = boardStopId;
             this.alightStopId = alightStopId;
@@ -201,6 +214,7 @@ public class ParetoServer {
             this.boardStopLon = boardStopLon;
             this.alightStopLat = alightStopLat;
             this.alightStopLon = alightStopLon;
+            this.geom = geom;
         }
     }
 }
