@@ -10,8 +10,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.function.Consumer;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import static com.conveyal.r5.analyst.fare.nyc.NYCInRoutingFareCalculator.NYCPatternType;
 
@@ -40,6 +42,12 @@ public class NYCStaticFareData {
 
     public static final Set<String> expressBusRoutes = new HashSet<>();
 
+    /** Peak fares on Metro-North, retrieve with .get(from).get(to) */
+    public static final Map<String, TObjectIntMap<String>> mnrPeakFares = new HashMap<>();
+
+    /** Offpeak fares on Metro-North, retrieve with .get(from).get(to) */
+    public static final Map<String, TObjectIntMap<String>> mnrOffpeakFares = new HashMap<>();
+
     /**
      * Map from subway stop IDs to station complex IDs. Any stops in the same same station complex have free transfers
      * The station complex IDs are interned so that == can be used efficiently.
@@ -55,6 +63,7 @@ public class NYCStaticFareData {
     static {
         readExpressBusRoutes();
         readSubwayTransfers();
+        readMetroNorthFares();
     }
 
     private static void readExpressBusRoutes () {
@@ -71,6 +80,18 @@ public class NYCStaticFareData {
 
                 subwayTransfers.put(stop, rdr.get("fare_area_id").intern()); // intern for efficiency
             });
+    }
+
+    private static void readMetroNorthFares () {
+        LOG.info("Reading Metro-North fares");
+        readCsvFromClasspath("fares/nyc/mnr/mnr_fares.csv", rdr -> {
+            String fromStopId = rdr.get("from_stop_id");
+            String toStopId = rdr.get("to_stop_id");
+            int peakFare = Integer.parseInt(rdr.get("peak"));
+            int offpeakFare = Integer.parseInt(rdr.get("offpeak"));
+            mnrPeakFares.computeIfAbsent(fromStopId, k -> new TObjectIntHashMap<>()).put(toStopId, peakFare);
+            mnrOffpeakFares.computeIfAbsent(fromStopId, k -> new TObjectIntHashMap<>()).put(toStopId, offpeakFare);
+        });
     }
 
     /** Read a CSV file from the classpath, calling forEachRow with the CSV reader as a parameter after the reader

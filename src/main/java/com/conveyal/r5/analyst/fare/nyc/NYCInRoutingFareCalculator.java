@@ -8,8 +8,10 @@ import com.conveyal.r5.transit.TripPattern;
 import gnu.trove.iterator.TObjectIntIterator;
 import gnu.trove.list.TIntList;
 import gnu.trove.list.array.TIntArrayList;
+import gnu.trove.map.TIntIntMap;
 import gnu.trove.map.TIntObjectMap;
 import gnu.trove.map.TObjectIntMap;
+import gnu.trove.map.hash.TIntIntHashMap;
 import gnu.trove.map.hash.TIntObjectHashMap;
 import gnu.trove.map.hash.TObjectIntHashMap;
 import gnu.trove.set.TIntSet;
@@ -60,6 +62,8 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         TIntList boardStops = new TIntArrayList();
         TIntList alightStops = new TIntArrayList();
         TIntList boardTimes = new TIntArrayList();
+        // not using bitset b/c hard to reverse
+        List<Boolean> reachedViaOnStreetTransfer = new ArrayList<>();
 
         McRaptorSuboptimalPathProfileRouter.McRaptorState stateForTraversal = state;
         while (stateForTraversal != null) {
@@ -71,6 +75,10 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             alightStops.add(stateForTraversal.stop);
             boardStops.add(transitLayer.tripPatterns.get(stateForTraversal.pattern).stops[stateForTraversal.boardStopPosition]);
             boardTimes.add(stateForTraversal.boardTime);
+
+            boolean onStreetTransfer = stateForTraversal.back != null && stateForTraversal.back.pattern == -1;
+            reachedViaOnStreetTransfer.add(onStreetTransfer);
+
             stateForTraversal = stateForTraversal.back;
         }
 
@@ -79,7 +87,10 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         alightStops.reverse();
         boardStops.reverse();
         boardTimes.reverse();
+        Collections.reverse(reachedViaOnStreetTransfer);
 
+        // TODO put all of these things into objects to make clearing less error-prone
+        // metroNorthState = null instead of clearing 5 fields.
         List<LIRRStop> lirrBoardStops = null;
         List<LIRRStop> lirrAlightStops = null;
         List<LIRRTransferAllowance.LIRRDirection> lirrDirections = null;
@@ -96,12 +107,22 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
         NYCPatternType previousPatternType = null;
 
-        // TODO I don't think this is handling street transfers (-1 pattern) right
+        // Metro-North transfer information
+        int metroNorthBoardStop = -1;
+        int metroNorthAlightStop = -1;
+        boolean metroNorthPeak = false;
+        // keep track of whether we're on the NH line or a different one, since there are no free
+        // transfers from the New Haven line to the Harlem/Hudson lines, at least not with the one-way tickets
+        // http://www.iridetheharlemline.com/2010/09/22/question-of-the-day-can-i-use-my-ticket-on-other-lines/
+        MetroNorthLine metroNorthLine = null;
+        int metroNorthDirection = -1;
+
         for (int i = 0; i < patterns.size(); i++) {
             int pattern = patterns.get(i);
             int boardStop = boardStops.get(i);
             int alightStop = alightStops.get(i);
             int boardTime = boardTimes.get(i);
+            boolean onStreetTransfer = reachedViaOnStreetTransfer.get(i);
             NYCPatternType patternType = fareData.patternTypeForPattern[pattern];
             boolean withinGatesSubwayTransfer = false; // set to true for free within-gates subway transfers
 
@@ -112,9 +133,11 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             }
 
             // ===== CLEAN UP AFTER LAST RIDE =====
-            // PAY FARE UPON LEAVING THE LIRR
-            if (lirrBoardStops != null && !NYCPatternType.LIRR_OFFPEAK.equals(patternType) &&
-                    !NYCPatternType.LIRR_PEAK.equals(patternType)) {
+            // PAY FARE UPON LEAVING THE LIRR, EITHER BY RIDING A DIFFERENT TRANSIT SERVICE
+            // OR BY TRANSFERRING ON-STREET
+            boolean thisPatternLirr = NYCPatternType.LIRR_OFFPEAK.equals(patternType) ||
+                    NYCPatternType.LIRR_PEAK.equals(patternType);
+            if (lirrBoardStops != null && (onStreetTransfer || !thisPatternLirr)) {
                 // we have left the LIRR
                 lirr = new LIRRTransferAllowance(lirrBoardStops, lirrAlightStops, lirrDirections, lirrPeak);
                 cumulativeFare += lirr.cumulativeFare;
@@ -123,6 +146,16 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 lirrAlightStops = null;
                 lirrPeak.clear();
                 lirrRideIndex = 0;
+            }
+
+            // PAY FARE FOR METRO-NORTH AFTER LEAVING
+            boolean thisPatternMnr = NYCPatternType.METRO_NORTH_PEAK.equals(patternType) ||
+                    NYCPatternType.METRO_NORTH_OFFPEAK.equals(patternType);
+            if (metroNorthBoardStop != -1 && (onStreetTransfer || !thisPatternMnr)) {
+                cumulativeFare += fareData.getMetroNorthFare(metroNorthBoardStop, metroNorthAlightStop, metroNorthPeak);
+                metroNorthBoardStop = metroNorthAlightStop = metroNorthDirection = -1;
+                metroNorthPeak = false;
+                metroNorthLine = null;
             }
 
             // CHECK FOR IN-SYSTEM SUBWAY TRANSFERS
@@ -213,6 +246,38 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             // STATEN ISLAND FERRY
             else if (NYCPatternType.STATEN_ISLAND_FERRY.equals(patternType)) continue; // SI Ferry is free
 
+            // METRO-NORTH RAILROAD
+            else if (NYCPatternType.METRO_NORTH_PEAK.equals(patternType) || NYCPatternType.METRO_NORTH_OFFPEAK.equals(patternType)) {
+                boolean thisRidePeak = NYCPatternType.METRO_NORTH_PEAK.equals(patternType);
+                MetroNorthLine thisRideLine = fareData.mnrLineForPattern.get(pattern);
+                int thisRideDirection = transitLayer.tripPatterns.get(pattern).directionId;
+
+                if (metroNorthBoardStop != -1) {
+                    // this is the second, etc. ride in a Metro-North trip
+                    if (thisRideDirection != metroNorthDirection || thisRideLine != metroNorthLine) {
+                        // we have changed direction or line. Pay for the previous ride, and reset the Metro-North transfer allowance
+                        // No via fares on Metro-North, unlike LIRR
+                        cumulativeFare += fareData.getMetroNorthFare(metroNorthBoardStop, metroNorthAlightStop, metroNorthPeak);
+                        metroNorthBoardStop = boardStop;
+                        metroNorthAlightStop = alightStop;
+                        metroNorthPeak = thisRidePeak;
+                        metroNorthDirection = thisRideDirection;
+                        metroNorthLine = thisRideLine;
+                    } else {
+                        // same direction transfer, just extend existing Metro-North ride
+                        metroNorthAlightStop = alightStop;
+                        metroNorthPeak |= thisRidePeak; // any ride that involves a peak ride anywhere is a peak fare.
+                    }
+                } else {
+                    // new metro-north ride
+                    metroNorthBoardStop = boardStop;
+                    metroNorthAlightStop = alightStop;
+                    metroNorthPeak = thisRidePeak;
+                    metroNorthDirection = thisRideDirection;
+                    metroNorthLine = thisRideLine;
+                }
+            }
+
             // LONG ISLAND RAIL ROAD
             // TODO refactor to use pattern type
             else if (fareData.allLirrPatterns.contains(pattern)) {
@@ -266,11 +331,20 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             cumulativeFare += lirr.cumulativeFare;
         }
 
+        // PAY FARE FOR METRO-NORTH RAILWAY IF THAT WAS THE LAST RIDE
+        if (metroNorthBoardStop != -1) {
+            cumulativeFare += fareData.getMetroNorthFare(metroNorthBoardStop, metroNorthAlightStop, metroNorthPeak);
+        }
+
         // IF WE HAVE AN ON-STREET TRANSFER, RECORD WHETHER WE'VE LEFT THE LIRR/SUBWAY FOR DOMINATION PURPOSES
         boolean leftSubwayPaidArea = false;
         if (state.pattern == -1) {
             // clear LIRR transfer allowance - no on street transfers with LIRR
             lirr = null;
+            // clear MNR transfer allowance - no on street transfers with MNR
+            metroNorthBoardStop = metroNorthAlightStop = metroNorthDirection = -1;
+            metroNorthPeak = false;
+            metroNorthLine = null;
             // record if we've left the subway paid area
             if (NYCPatternType.METROCARD_SUBWAY.equals(previousPatternType)) {
                 leftSubwayPaidArea = !hasBehindGatesTransfer(state.back.stop, state.stop, fareData);
@@ -278,7 +352,10 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         }
 
         return new FareBounds(cumulativeFare,
-                new NYCTransferAllowance(lirr, metrocardTransferSource, metrocardTransferExpiry, leftSubwayPaidArea));
+                new NYCTransferAllowance(lirr, metrocardTransferSource, metrocardTransferExpiry,
+                        leftSubwayPaidArea,
+                        metroNorthBoardStop, metroNorthDirection, metroNorthPeak, metroNorthLine
+                ));
     }
 
     /** return true if you can transfer from subway stop from to to without leaving the system */
@@ -301,6 +378,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
     public static final class NYCFareDataCache {
         public final TIntObjectMap<LIRRStop> lirrStopForTransitLayerStop = new TIntObjectHashMap<>();
+        public final TObjectIntMap<String> transitLayerStopForMnrStop = new TObjectIntHashMap<>();
         public final TIntSet peakLirrPatterns = new TIntHashSet();
         public final TIntSet allLirrPatterns = new TIntHashSet();
         public NYCPatternType[] patternTypeForPattern;
@@ -309,6 +387,18 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
         /** map from stop indices to (interned) fare areas for use in calculating free subway transfers */
         public final TIntObjectMap<String> fareAreaForStop = new TIntObjectHashMap<>();
+
+        /** Metro-North peak fares, map from from stop -> to stop -> fare */
+        public final TIntObjectMap<TIntIntMap> mnrPeakFares = new TIntObjectHashMap<>();
+
+        /** Metro-North peak fares, map from from stop -> to stop -> fare */
+        public final TIntObjectMap<TIntIntMap> mnrOffpeakFares = new TIntObjectHashMap<>();
+
+        /** Since there are no free transfers betwen lines on Metro-North, keep track of which line
+         * we're on.
+         */
+        public final TIntObjectMap<MetroNorthLine> mnrLineForPattern = new TIntObjectHashMap<>();
+
 
         public NYCFareDataCache (TransitLayer transitLayer) {
             patternTypeForPattern = new NYCPatternType[transitLayer.tripPatterns.size()];
@@ -321,6 +411,8 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     lirrStopForTransitLayerStop.put(i, LIRRStop.valueOf(stopId.toUpperCase(Locale.US)));
                 } else if (NYCStaticFareData.subwayTransfers.containsKey(stopId)) {
                     fareAreaForStop.put(i, NYCStaticFareData.subwayTransfers.get(stopId));
+                } else if (stopId.startsWith("mnr")) {
+                    transitLayerStopForMnrStop.put(stopId.substring(4), i); // get rid of mnr_ prefix
                 } else if (NYCStaticFareData.statenIslandRwyFareStops.contains(stopId)) statenIslandRwyFareStops.add(i);
             }
 
@@ -335,7 +427,21 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     } else {
                         patternTypeForPattern[i] = NYCPatternType.LIRR_OFFPEAK;
                     }
+                } else if (routeId.startsWith("mnr")) {
+                    if (routeId.endsWith("offpeak")) patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_OFFPEAK;
+                    else patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_PEAK;
 
+
+                    // figure out what line it's on New Haven line
+                    String routeLongName = transitLayer.routes.get(pat.routeIndex).route_long_name;
+
+                    if (routeLongName.equals("Harlem")) mnrLineForPattern.put(i, MetroNorthLine.HARLEM);
+                    else if (routeLongName.equals("Hudson")) mnrLineForPattern.put(i, MetroNorthLine.HUDSON);
+                    // New Haven line has many branches
+                    else if (routeLongName.equals("New Haven") || routeLongName.equals("New Canaan") ||
+                            routeLongName.equals("Waterbury") || routeLongName.equals("Danbury") ||
+                            routeLongName.equals("MNR Shore Line East")) mnrLineForPattern.put(i, MetroNorthLine.NEW_HAVEN);
+                    else throw new IllegalStateException("Unrecognized Metro-North route_long_name " + routeLongName);
                 } else if (routeId.startsWith("bus")) {
                     // Figure out if it's a local bus or an express bus
                     String[] split = routeId.split("_");
@@ -351,6 +457,30 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     else patternTypeForPattern[i] = NYCPatternType.METROCARD_SUBWAY;
                 } else if (routeId.startsWith("si-ferry")) patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_FERRY;
             }
+
+            // construct MNR fare tables
+            NYCStaticFareData.mnrPeakFares.forEach((fromStop, toStops) -> {
+                int fromTransitLayerStop = transitLayerStopForMnrStop.get(fromStop);
+                TIntIntMap toTransitLayerStops = new TIntIntHashMap();
+                toStops.forEachEntry((toStop, fare) -> {
+                            int toTransitLayerStop = transitLayerStopForMnrStop.get(toStop);
+                            toTransitLayerStops.put(toTransitLayerStop, fare);
+                            return true; // continue iteration
+                        });
+                mnrPeakFares.put(fromTransitLayerStop, toTransitLayerStops);
+            });
+
+            NYCStaticFareData.mnrOffpeakFares.forEach((fromStop, toStops) -> {
+                int fromTransitLayerStop = transitLayerStopForMnrStop.get(fromStop);
+                TIntIntMap toTransitLayerStops = new TIntIntHashMap();
+                toStops.forEachEntry((toStop, fare) -> {
+                    int toTransitLayerStop = transitLayerStopForMnrStop.get(toStop);
+                    toTransitLayerStops.put(toTransitLayerStop, fare);
+                    return true; // continue iteration
+                });
+                mnrOffpeakFares.put(fromTransitLayerStop, toTransitLayerStops);
+            });
+
 
             // print stats
             TObjectIntMap<NYCPatternType> hist = new TObjectIntHashMap<>();
@@ -370,6 +500,15 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 LOG.info("  {}: {}", it.key(), it.value());
             }
         }
+
+        public int getMetroNorthFare (int fromStop, int toStop, boolean peak) {
+            TIntObjectMap<TIntIntMap> fares = (peak ? mnrPeakFares : mnrOffpeakFares);
+            if (!fares.containsKey(fromStop) || !fares.get(fromStop).containsKey(toStop)) {
+                throw new IllegalArgumentException("Could not find Metro-North fare!");
+            }
+
+            return fares.get(fromStop).get(toStop);
+        }
     }
 
     public enum NYCPatternType {
@@ -383,7 +522,13 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         /** MTA Express buses, $6.75 or $3.75 upgrade from local bus (yes, it's cheaper to transfer from local bus) */
         METROCARD_EXPRESS_BUS,
         STATEN_ISLAND_FERRY,
+        METRO_NORTH_PEAK,
+        METRO_NORTH_OFFPEAK,
         // TODO currently unused
         LIRR_OFFPEAK, LIRR_PEAK
+    }
+
+    public enum MetroNorthLine {
+        HARLEM, HUDSON, NEW_HAVEN // and branches
     }
 }

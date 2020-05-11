@@ -10,10 +10,31 @@ public class NYCTransferAllowance extends TransferAllowance {
     public final LIRRTransferAllowance lirr;
     private final NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource;
     private final int metrocardTransferExpiry;
+
     private boolean leftSubwayPaidArea;
 
+    /** Where the Metro-North was boarded, -1 if not on Metro-North */
+    private final int metroNorthBoardStop;
+
+    /** Direction of the current Metro-North trip, -1 if not on Metro-North */
+    private final int metroNorthDirection;
+
+    /** Whether the current Metro-North trip is peak or not */
+    private final boolean metroNorthPeak;
+
+    /** Since metro-north doesn't allow inter-line transfers, record which line we are on */
+    private final NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine;
+
+    /**
+     * Whether the current Metro-North trip is on the New Haven line
+     * This is important because there are no free transfers between the New Haven and Harlem/Hudson
+     * lines, see http://www.iridetheharlemline.com/2010/09/22/question-of-the-day-can-i-use-my-ticket-on-other-lines/
+     */
+
     public NYCTransferAllowance(LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource,
-                                int metrocardTransferExpiry, boolean leftSubwayPaidArea) {
+                                int metrocardTransferExpiry, boolean leftSubwayPaidArea,
+                                int metroNorthBoardStop, int metroNorthDirection, boolean metroNorthPeak,
+                                NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine) {
         // only the value needs to be set correctly. The expiration time and number of transfers left are only used in
         // the second domination rule, which we override in atLeastAsGoodForAllFutureRedemptions
         super(computeMaxTransferAllowance(lirr, metrocardTransferSource), Integer.MAX_VALUE, Integer.MAX_VALUE);
@@ -21,6 +42,10 @@ public class NYCTransferAllowance extends TransferAllowance {
         this.metrocardTransferSource = metrocardTransferSource;
         this.metrocardTransferExpiry = metrocardTransferExpiry;
         this.leftSubwayPaidArea = leftSubwayPaidArea;
+        this.metroNorthBoardStop = metroNorthBoardStop;
+        this.metroNorthDirection = metroNorthDirection;
+        this.metroNorthPeak = metroNorthPeak;
+        this.metroNorthLine = metroNorthLine;
     }
 
     /**
@@ -59,6 +84,17 @@ public class NYCTransferAllowance extends TransferAllowance {
             // transfers. Although for optimization this might not matter due to cutoff time.
             if (metrocardTransferExpiry < o.metrocardTransferExpiry) return false; // expires sooner
             if (!leftSubwayPaidArea && o.leftSubwayPaidArea) return false; // free transfer with this and not with other
+
+            // if other does not have a Metro-North allowance, this is better.
+            // otherwise, this is only the same or better if board stops, peak/offpeak,
+            // directions, and line are all the same. This will overretain trips, but Metro-North
+            // is small enough this should be fine.
+            if (o.metroNorthBoardStop != -1 && (
+                    metroNorthBoardStop != o.metroNorthBoardStop ||
+                            metroNorthPeak != o.metroNorthPeak ||
+                            metroNorthDirection != o.metroNorthDirection ||
+                            metroNorthLine != o.metroNorthLine
+                    )) return false;
 
             // if we got here, we're good
             return true;
