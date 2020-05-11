@@ -53,7 +53,10 @@ public class NYCTransferAllowance extends TransferAllowance {
             if (lirr != null && !lirr.atLeastAsGoodForAllFutureRedemptions(o.lirr)) return false;
             if (lirr == null && o.lirr != null) return false; // can't be as good
 
-            if (metrocardTransferSource != o.metrocardTransferSource) return false; // different services
+            // if other is null this is better
+            if (metrocardTransferSource != o.metrocardTransferSource && o.metrocardTransferSource != null) return false;
+            // NB local bus is not strictly better than subway, because subway has no expiration time for within-system
+            // transfers. Although for optimization this might not matter due to cutoff time.
             if (metrocardTransferExpiry < o.metrocardTransferExpiry) return false; // expires sooner
             if (!leftSubwayPaidArea && o.leftSubwayPaidArea) return false; // free transfer with this and not with other
 
@@ -63,4 +66,5 @@ public class NYCTransferAllowance extends TransferAllowance {
             throw new IllegalArgumentException("Mixing of transfer allowance types!");
         }
     }
+
 }
