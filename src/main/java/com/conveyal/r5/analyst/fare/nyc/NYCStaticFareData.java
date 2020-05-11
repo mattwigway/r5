@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.Consumer;
+
 import static com.conveyal.r5.analyst.fare.nyc.NYCInRoutingFareCalculator.NYCPatternType;
 
 /** A class that contains a bunch of static data about fares in NYC */
@@ -57,49 +59,45 @@ public class NYCStaticFareData {
 
     private static void readExpressBusRoutes () {
         LOG.info("Reading express bus routes");
-
-        InputStream is = null;
-        try {
-            is = LIRRTransferAllowance.class.getClassLoader().getResourceAsStream("fares/nyc/mta/express_bus_routes.csv");
-            CsvReader rdr = new CsvReader(is, ',', StandardCharsets.UTF_8);
-            rdr.readHeaders();
-            while (rdr.readRecord()) {
-                expressBusRoutes.add(rdr.get("route_id"));
-            }
-        } catch (IOException e) {
-            LOG.error("IO Exception reading express bus routes", e);
-        } finally {
-            try {
-                is.close();
-            } catch (IOException e) {
-                LOG.error("IO Exception closing express bus routes", e);
-            }
-        }
+        readCsvFromClasspath("fares/nyc/mta/express_bus_routes.csv", rdr -> expressBusRoutes.add(rdr.get("route_id")));
     }
 
     private static void readSubwayTransfers () {
         LOG.info("Reading subway transfers");
-
-        InputStream is = null;
-        try {
-            is = LIRRTransferAllowance.class.getClassLoader().getResourceAsStream("fares/nyc/mta/subway_transfers.csv");
-            CsvReader rdr = new CsvReader(is, ',', StandardCharsets.UTF_8);
-            rdr.readHeaders();
-            while (rdr.readRecord()) {
+        readCsvFromClasspath("fares/nyc/mta/subway_transfers.csv", rdr -> {
                 String stop = rdr.get("stop_id");
 
                 if (subwayTransfers.containsKey(stop)) throw new IllegalStateException("Duplicate stop " + stop + " in subway_transfers.csv!");
 
                 subwayTransfers.put(stop, rdr.get("fare_area_id").intern()); // intern for efficiency
-            }
+            });
+    }
+
+    /** Read a CSV file from the classpath, calling forEachRow with the CSV reader as a parameter after the reader
+     * has been advanced to each row.
+     * @param name Filename on classpath
+     */
+    private static void readCsvFromClasspath (String name, IOExceptionConsumer<CsvReader> forEachRow) {
+        InputStream is = null;
+        try {
+            is = NYCStaticFareData.class.getClassLoader().getResourceAsStream(name);
+            CsvReader rdr = new CsvReader(is, ',', StandardCharsets.UTF_8);
+            rdr.readHeaders();
+            while (rdr.readRecord()) forEachRow.accept(rdr);
         } catch (IOException e) {
-            LOG.error("IO Exception reading subway transfers", e);
+            LOG.error("IO Exception reading {}", name, e);
         } finally {
             try {
                 is.close();
             } catch (IOException e) {
-                LOG.error("IO Exception closing subway transfers", e);
+                LOG.error("IO Exception closing {}", name, e);
             }
         }
+    }
+
+    /** Just a consumer that allows throwing an IOException */
+    @FunctionalInterface
+    private interface IOExceptionConsumer<T>  {
+        void accept (T t) throws IOException;
     }
 }
