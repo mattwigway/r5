@@ -89,8 +89,11 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         int cumulativeFare = 0;
         LIRRTransferAllowance lirr = null;
 
+        // Metrocard fare information: where the fare came from (i.e. what mode was paid for), as this determines what
+        // you can transfer to.
         NYCPatternType metrocardTransferSource = null;
         int metrocardTransferExpiry = maxClockTime;
+        boolean inSubwayPaidArea = false; // when inside the subway paid area, we can change to a new subway line for free
 
         int previousAlightStop = -1;
 
@@ -113,7 +116,6 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             int boardTime = boardTimes.get(i);
             boolean onStreetTransfer = reachedViaOnStreetTransfer.get(i);
             NYCPatternType patternType = fareData.patternTypeForPattern[pattern];
-            boolean withinGatesSubwayTransfer = false; // set to true for free within-gates subway transfers
 
             if (i > 0) {
                 // Don't do this at the end of the loop since there is short-circuit logic (continue) below
@@ -147,9 +149,11 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 metroNorthLine = null;
             }
 
-            // CHECK FOR IN-SYSTEM SUBWAY TRANSFERS
-            if (NYCPatternType.METROCARD_SUBWAY.equals(patternType) && NYCPatternType.METROCARD_SUBWAY.equals(previousPatternType)) {
-                withinGatesSubwayTransfer = hasBehindGatesTransfer(previousAlightStop, boardStop, fareData);
+            // CHECK FOR SUBWAY SYSTEM EXIT
+            if (inSubwayPaidArea) {
+                // Elvis has left the subway
+                if (NYCPatternType.METROCARD_SUBWAY.equals(patternType)) inSubwayPaidArea = hasBehindGatesTransfer(previousAlightStop, boardStop, fareData);
+                else inSubwayPaidArea = false;
             }
 
             // ====== PROCESS THIS RIDE ======
@@ -190,22 +194,23 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
             // MTA SUBWAY
             else if (NYCPatternType.METROCARD_SUBWAY.equals(patternType)) {
-                if (withinGatesSubwayTransfer) continue; // no fare interaction, no change to transfer allowance
-                else {
-                    if (boardTime <= metrocardTransferExpiry &&
-                            (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
-                                    NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
-                                    NYCPatternType.STATEN_ISLAND_RWY.equals(metrocardTransferSource))) {
-                        // free transfer from bus/SIR to subway, but clear transfer allowance
-                        metrocardTransferSource = null;
-                        metrocardTransferExpiry = maxClockTime;
-                    } else {
-                        // pay new fare
-                        cumulativeFare += NYCStaticFareData.LOCAL_BUS_SUBWAY_FARE;
-                        metrocardTransferSource = NYCPatternType.METROCARD_SUBWAY;
-                        metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
-                    }
+                if (inSubwayPaidArea) continue; // no fare interaction
+                if (boardTime <= metrocardTransferExpiry &&
+                        (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
+                                NYCPatternType.STATEN_ISLAND_RWY.equals(metrocardTransferSource))) {
+                    // free transfer from bus/SIR to subway, but clear transfer allowance
+                    metrocardTransferSource = null;
+                    metrocardTransferExpiry = maxClockTime;
+                } else {
+                    // pay new fare
+                    cumulativeFare += NYCStaticFareData.LOCAL_BUS_SUBWAY_FARE;
+                    metrocardTransferSource = NYCPatternType.METROCARD_SUBWAY;
+                    metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS,
+                            maxClockTime);
                 }
+                // we are now in the subway paid area
+                inSubwayPaidArea = true;
             }
 
             // STATEN ISLAND RAILWAY
@@ -340,7 +345,6 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         }
 
         // IF WE HAVE AN ON-STREET TRANSFER, RECORD WHETHER WE'VE LEFT THE LIRR/SUBWAY FOR DOMINATION PURPOSES
-        boolean leftSubwayPaidArea = false;
         if (state.pattern == -1) {
             // clear LIRR transfer allowance - no on street transfers with LIRR
             lirr = null;
@@ -349,14 +353,14 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             metroNorthPeak = false;
             metroNorthLine = null;
             // record if we've left the subway paid area
-            if (NYCPatternType.METROCARD_SUBWAY.equals(previousPatternType)) {
-                leftSubwayPaidArea = !hasBehindGatesTransfer(state.back.stop, state.stop, fareData);
+            if (inSubwayPaidArea) {
+                inSubwayPaidArea = hasBehindGatesTransfer(state.back.stop, state.stop, fareData);
             }
         }
 
         return new FareBounds(cumulativeFare,
                 new NYCTransferAllowance(lirr, metrocardTransferSource, metrocardTransferExpiry,
-                        leftSubwayPaidArea,
+                        inSubwayPaidArea,
                         metroNorthBoardStop, metroNorthDirection, metroNorthPeak, metroNorthLine
                 ));
     }

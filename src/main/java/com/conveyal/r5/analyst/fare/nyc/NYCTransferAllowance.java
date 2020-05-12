@@ -13,7 +13,7 @@ public class NYCTransferAllowance extends TransferAllowance {
     public final NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource;
     public final int metrocardTransferExpiry;
 
-    public boolean leftSubwayPaidArea;
+    public boolean inSubwayPaidArea;
 
     /** Where the Metro-North was boarded, -1 if not on Metro-North */
     public final int metroNorthBoardStop;
@@ -34,7 +34,7 @@ public class NYCTransferAllowance extends TransferAllowance {
      */
 
     public NYCTransferAllowance(LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource,
-                                int metrocardTransferExpiry, boolean leftSubwayPaidArea,
+                                int metrocardTransferExpiry, boolean inSubwayPaidArea,
                                 int metroNorthBoardStop, int metroNorthDirection, boolean metroNorthPeak,
                                 NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine) {
         // only the value needs to be set correctly. The expiration time and number of transfers left are only used in
@@ -43,7 +43,7 @@ public class NYCTransferAllowance extends TransferAllowance {
         this.lirr = lirr;
         this.metrocardTransferSource = metrocardTransferSource;
         this.metrocardTransferExpiry = metrocardTransferExpiry;
-        this.leftSubwayPaidArea = leftSubwayPaidArea;
+        this.inSubwayPaidArea = inSubwayPaidArea;
         this.metroNorthBoardStop = metroNorthBoardStop;
         this.metroNorthDirection = metroNorthDirection;
         this.metroNorthPeak = metroNorthPeak;
@@ -79,20 +79,28 @@ public class NYCTransferAllowance extends TransferAllowance {
         return maxTransferAllowance;
     }
 
-
     @Override
     public boolean atLeastAsGoodForAllFutureRedemptions(TransferAllowance other) {
+        // Note that we're not calling super here, all logic is reimplemented here.
+        // This goes through lots of ways other could be better than this, and returns false if
+        // other is possibly better in any way.
         if (other instanceof NYCTransferAllowance) {
             NYCTransferAllowance o = (NYCTransferAllowance) other;
+            // if this LIRR is not at least as good as other for all future redemptions, this NYCTransferAllowance
+            // is not as good as or better than the other for all future redemptions
             if (lirr != null && !lirr.atLeastAsGoodForAllFutureRedemptions(o.lirr)) return false;
-            if (lirr == null && o.lirr != null) return false; // can't be as good
+            // If the other has an LIRR transfer allowance and this doesn't,  other is better for some destinations
+            if (lirr == null && o.lirr != null) return false;
 
-            // if other is null this is better
+            // if they don't have the same metrocard transfer source, retain both -- different transfer rules
+            // exception: if other does not have a metrocard transfer source, it can't be better on this criterion
             if (metrocardTransferSource != o.metrocardTransferSource && o.metrocardTransferSource != null) return false;
-            // NB local bus is not strictly better than subway, because subway has no expiration time for within-system
-            // transfers. Although for optimization this might not matter due to cutoff time.
+
+            // If the other expires later, it could be better
             if (metrocardTransferExpiry < o.metrocardTransferExpiry) return false; // expires sooner
-            if (!leftSubwayPaidArea && o.leftSubwayPaidArea) return false; // free transfer with this and not with other
+
+            // if the other is in the subway and this is not, other could be better.
+            if (!inSubwayPaidArea && o.inSubwayPaidArea) return false; // free transfer with other and not with this
 
             // if other does not have a Metro-North allowance, this is better.
             // otherwise, this is only the same or better if board stops, peak/offpeak,
