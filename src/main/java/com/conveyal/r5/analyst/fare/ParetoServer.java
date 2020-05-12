@@ -12,6 +12,7 @@ import com.conveyal.r5.transit.TripPattern;
 import gnu.trove.iterator.TIntObjectIterator;
 import gnu.trove.map.TIntIntMap;
 import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.CoordinateXY;
 import org.locationtech.jts.geom.LineString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,42 +141,69 @@ public class ParetoServer {
 
             legs = new ArrayList<>();
 
-            while (state.back != null) {
-                if (state.pattern != -1) {
-                    TripPattern pattern = network.transitLayer.tripPatterns.get(state.pattern);
+            while (state != null) {
+                if (state.stop != -1 && (state.pattern != -1 || state.back != null)) {
+                    if (state.pattern == -1) {
+                        int destStopIndex = state.stop;
+                        int originStopIndex = state.back.stop;
 
-                    int boardStopIndex = pattern.stops[state.boardStopPosition];
-                    int alightStopIndex = pattern.stops[state.alightStopPosition];
+                        Coordinate originStopCoord = network.transitLayer.getCoordinateForStopFixed(originStopIndex);
+                        Coordinate destStopCoord = network.transitLayer.getCoordinateForStopFixed(destStopIndex);
 
-                    Coordinate boardStopCoord = network.transitLayer.getCoordinateForStopFixed(boardStopIndex);
-                    Coordinate alightStopCoord = network.transitLayer.getCoordinateForStopFixed(alightStopIndex);
+                        int originTime = state.back.time;
+                        int destTime = state.time;
 
-                    List<Coordinate> coords = new ArrayList<>();
-                    List<LineString> hops = pattern.getHopGeometries(network.transitLayer);
-                    for (int i = state.boardStopPosition; i < state.alightStopPosition; i++) { // hop i is from stop i to i + 1, don't include last stop index
-                        LineString hop = hops.get(i);
-                        for (Coordinate c : hop.getCoordinates()) coords.add(c);
+                        LineString geom = GeometryUtils.geometryFactory.createLineString(new Coordinate[] {
+                                new Coordinate(originStopCoord.getX() / VertexStore.FIXED_FACTOR, originStopCoord.getY() / VertexStore.FIXED_FACTOR),
+                                new Coordinate(destStopCoord.getX() / VertexStore.FIXED_FACTOR, destStopCoord.getY() / VertexStore.FIXED_FACTOR),
+                        });
+
+                        legs.add(new ParetoTransferLeg(
+                                originStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                                originStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                                destStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                                destStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                                geom,
+                                originTime,
+                                destTime,
+                                network.transitLayer.stopIdForIndex.get(originStopIndex),
+                                network.transitLayer.stopNames.get(originStopIndex),
+                                network.transitLayer.stopIdForIndex.get(destStopIndex),
+                                network.transitLayer.stopNames.get(destStopIndex),
+                                state.fare.cumulativeFarePaid,
+                                state.fare.transferAllowance
+                        ));
+
+                    } else {
+                        TripPattern pattern = network.transitLayer.tripPatterns.get(state.pattern);
+
+                        int boardStopIndex = pattern.stops[state.boardStopPosition];
+                        int alightStopIndex = pattern.stops[state.alightStopPosition];
+
+                        Coordinate boardStopCoord = network.transitLayer.getCoordinateForStopFixed(boardStopIndex);
+                        Coordinate alightStopCoord = network.transitLayer.getCoordinateForStopFixed(alightStopIndex);
+
+                        List<Coordinate> coords = new ArrayList<>();
+                        List<LineString> hops = pattern.getHopGeometries(network.transitLayer);
+                        for (int i = state.boardStopPosition; i < state.alightStopPosition; i++) { // hop i is from stop i to i + 1, don't include last stop index
+                            LineString hop = hops.get(i);
+                            for (Coordinate c : hop.getCoordinates())
+                                coords.add(c);
+                        }
+                        LineString shape = GeometryUtils.geometryFactory.createLineString(coords.toArray(new Coordinate[coords.size()]));
+
+                        legs.add(new ParetoTransitLeg(network.transitLayer.routes.get(pattern.routeIndex),
+                                network.transitLayer.stopIdForIndex.get(boardStopIndex), network.transitLayer.stopNames.get(boardStopIndex),
+                                network.transitLayer.stopIdForIndex.get(alightStopIndex), network.transitLayer.stopNames.get(alightStopIndex),
+                                state.boardTime, state.time, state.fare.cumulativeFarePaid,
+                                boardStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                                boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                                alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
+                                alightStopCoord.getX() / VertexStore.FIXED_FACTOR, shape, state.fare.transferAllowance));
                     }
-                    LineString shape = GeometryUtils.geometryFactory.createLineString(coords.toArray(new Coordinate[coords.size()]));
 
-                    legs.add(new ParetoLeg(
-                            network.transitLayer.routes.get(pattern.routeIndex),
-                            network.transitLayer.stopIdForIndex.get(boardStopIndex),
-                            network.transitLayer.stopNames.get(boardStopIndex),
-                            network.transitLayer.stopIdForIndex.get(alightStopIndex),
-                            network.transitLayer.stopNames.get(alightStopIndex),
-                            state.boardTime,
-                            state.time,
-                            state.fare.cumulativeFarePaid,
-                            boardStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                            boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
-                            alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                            alightStopCoord.getX() / VertexStore.FIXED_FACTOR,
-                            shape,
-                            state.fare.transferAllowance
-                            ));
+
                 }
-
                 state = state.back;
             }
 
@@ -184,40 +212,71 @@ public class ParetoServer {
 
     }
 
-    public static final class ParetoLeg {
+    public static final class ParetoTransitLeg extends ParetoLeg {
         public final RouteInfo route;
-        public final String boardStopId;
-        public final String alightStopId;
-        public final String boardStopName;
-        public final String alightStopName;
-        public final int boardTime;
-        public final int alightTime;
-        public final int cumulativeFare;
-        public final LineString geom;
 
-        public final double boardStopLat;
-        public final double boardStopLon;
-        public final double alightStopLat;
-        public final double alightStopLon;
-        public final TransferAllowance transferAllowance;
-
-        public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName,
+        public ParetoTransitLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName,
                          int boardTime, int alightTime, int cumulativeFare, double boardStopLat, double boardStopLon,
                          double alightStopLat, double alightStopLon, LineString geom, TransferAllowance transferAllowance) {
+            super(boardStopLat, boardStopLon, alightStopLat, alightStopLon, geom, boardTime, alightTime,
+                    boardStopId, boardStopName, alightStopId, alightStopName, cumulativeFare, transferAllowance);
             this.route = route;
-            this.boardStopId = boardStopId;
-            this.alightStopId = alightStopId;
-            this.boardStopName = boardStopName;
-            this.alightStopName = alightStopName;
-            this.boardTime = boardTime;
-            this.alightTime = alightTime;
-            this.cumulativeFare = cumulativeFare;
-            this.boardStopLat = boardStopLat;
-            this.boardStopLon = boardStopLon;
-            this.alightStopLat = alightStopLat;
-            this.alightStopLon = alightStopLon;
+        }
+
+        @Override public String getType() {
+            return "transit";
+        }
+    }
+
+    public static final class ParetoTransferLeg extends ParetoLeg {
+        public ParetoTransferLeg(double originLat, double originLon, double destLat,
+                double destLon, LineString geom, int originTime, int destTime,
+                String originStopId, String originStopName, String destStopId, String destStopName,
+                int cumulativeFare, TransferAllowance transferAllowance) {
+            super(originLat, originLon, destLat, destLon, geom, originTime, destTime,
+                    originStopId, originStopName, destStopId, destStopName, cumulativeFare,
+                    transferAllowance);
+        }
+
+        @Override public String getType() {
+            return "transfer";
+        }
+    }
+
+    public static abstract class ParetoLeg {
+        public final double originLat;
+        public final double originLon;
+        public final double destLat;
+        public final double destLon;
+        public final LineString geom;
+        public final int originTime;
+        public final int destTime;
+        public final String originStopId;
+        public final String originStopName;
+        public final String destStopId;
+        public final String destStopName;
+        public final int cumulativeFare;
+        public final TransferAllowance transferAllowance;
+
+        protected ParetoLeg(double originLat, double originLon, double destLat, double destLon,
+                LineString geom, int originTime, int destTime, String originStopId,
+                String originStopName, String destStopId, String destStopName, int cumulativeFare,
+                TransferAllowance transferAllowance) {
+            this.originLat = originLat;
+            this.originLon = originLon;
+            this.destLat = destLat;
+            this.destLon = destLon;
             this.geom = geom;
+            this.originTime = originTime;
+            this.destTime = destTime;
+            this.originStopId = originStopId;
+            this.originStopName = originStopName;
+            this.destStopId = destStopId;
+            this.destStopName = destStopName;
+            this.cumulativeFare = cumulativeFare;
             this.transferAllowance = transferAllowance;
         }
+
+        public abstract String getType();
     }
 }
