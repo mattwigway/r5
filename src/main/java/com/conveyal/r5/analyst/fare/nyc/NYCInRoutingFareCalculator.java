@@ -150,9 +150,12 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             }
 
             // CHECK FOR SUBWAY SYSTEM EXIT
+            // Elvis has left the subway
             if (inSubwayPaidArea) {
-                // Elvis has left the subway
+                // If we're still riding the subway, check if it was a behind-gates transfer
                 if (NYCPatternType.METROCARD_SUBWAY.equals(patternType)) inSubwayPaidArea = hasBehindGatesTransfer(previousAlightStop, boardStop, fareData);
+                // If we're not still riding the subway, well then, it is tautologically clear that we have
+                // left the subway.
                 else inSubwayPaidArea = false;
             }
 
