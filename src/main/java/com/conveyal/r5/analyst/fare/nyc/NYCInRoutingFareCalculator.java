@@ -278,6 +278,20 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 }
             }
 
+            // NYC FERRY
+            else if (NYCPatternType.NYC_FERRY.equals(patternType)) {
+                // simple, just increment the fare, no transfers, don't adjust xfer allowances
+                cumulativeFare += NYCStaticFareData.NYC_FERRY_FARE;
+            }
+
+            // NYC FERRY FREE SHUTTLE BUS
+            // I can't find anywhere where it says that these can only be used in conjunction with
+            // a ferry. Pickup_type and dropoff_type is 0 at all stops, but we could change that to
+            // only allow pickups/dropoffs at the ferry terminal.
+            else if (NYCPatternType.NYC_FERRY_BUS.equals(patternType)) {
+                // do nothing, but keep this here so we don't throw an unknown pattern type error later
+            }
+
             // LONG ISLAND RAIL ROAD
             // TODO refactor to use pattern type
             else if (fareData.allLirrPatterns.contains(pattern)) {
@@ -431,8 +445,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     if (routeId.endsWith("offpeak")) patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_OFFPEAK;
                     else patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_PEAK;
 
-
-                    // figure out what line it's on New Haven line
+                    // figure out what line it's on
                     String routeLongName = transitLayer.routes.get(pat.routeIndex).route_long_name;
 
                     if (routeLongName.equals("Harlem")) mnrLineForPattern.put(i, MetroNorthLine.HARLEM);
@@ -457,6 +470,14 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     else patternTypeForPattern[i] = NYCPatternType.METROCARD_SUBWAY;
                 } else if (routeId.startsWith("si-ferry")) {
                     patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_FERRY;
+                } else if (routeId.startsWith("ferry")) {
+                    // NYC Ferry
+                    // figure out if it's a real ferry, or a free shuttle bus
+                    int routeType = transitLayer.routes.get(pat.routeIndex).route_type;
+
+                    if (routeType == 4) patternTypeForPattern[i] = NYCPatternType.NYC_FERRY; // boat
+                    else if (routeType == 3) patternTypeForPattern[i] = NYCPatternType.NYC_FERRY_BUS; // free shuttle bus
+                    else throw new IllegalArgumentException("unexpected route type in NYC Ferry feed");
                 }
 
                 if (patternTypeForPattern[i] == null){
@@ -531,7 +552,9 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         METRO_NORTH_PEAK,
         METRO_NORTH_OFFPEAK,
         // TODO currently unused
-        LIRR_OFFPEAK, LIRR_PEAK
+        LIRR_OFFPEAK, LIRR_PEAK,
+        NYC_FERRY,
+        NYC_FERRY_BUS // Free shuttle bus to NYC Ferry terminals
     }
 
     public enum MetroNorthLine {

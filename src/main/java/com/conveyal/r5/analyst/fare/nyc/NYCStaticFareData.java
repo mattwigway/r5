@@ -23,6 +23,7 @@ public class NYCStaticFareData {
     public static final int EXPRESS_BUS_FARE = 675;
     public static final int EXPRESS_BUS_UPGRADE = 375;
     public static final int METROCARD_TRANSFER_VALIDITY_TIME_SECONDS = 2 * 60 * 60;
+    public static final int NYC_FERRY_FARE = 275;
     public static final int METRO_NORTH_MAX_FARE;
 
     public static final TObjectIntMap<NYCPatternType> METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE =
