@@ -455,7 +455,13 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     // Figure out if it's the Staten Island Railway
                     if (routeId.equals("nyct_subway_SI")) patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_RWY;
                     else patternTypeForPattern[i] = NYCPatternType.METROCARD_SUBWAY;
-                } else if (routeId.startsWith("si-ferry")) patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_FERRY;
+                } else if (routeId.startsWith("si-ferry")) {
+                    patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_FERRY;
+                }
+
+                if (patternTypeForPattern[i] == null){
+                    throw new IllegalStateException("No pattern type assigned for pattern on route " + routeId);
+                }
             }
 
             // construct MNR fare tables
