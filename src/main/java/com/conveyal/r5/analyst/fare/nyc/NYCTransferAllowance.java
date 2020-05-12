@@ -7,23 +7,25 @@ import com.conveyal.r5.analyst.fare.TransferAllowance;
  */
 
 public class NYCTransferAllowance extends TransferAllowance {
-    public final LIRRTransferAllowance lirr;
-    private final NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource;
-    private final int metrocardTransferExpiry;
+    // all these are public so they can be JSON-serialized for the debug interface
 
-    private boolean leftSubwayPaidArea;
+    public final LIRRTransferAllowance lirr;
+    public final NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource;
+    public final int metrocardTransferExpiry;
+
+    public boolean leftSubwayPaidArea;
 
     /** Where the Metro-North was boarded, -1 if not on Metro-North */
-    private final int metroNorthBoardStop;
+    public final int metroNorthBoardStop;
 
     /** Direction of the current Metro-North trip, -1 if not on Metro-North */
-    private final int metroNorthDirection;
+    public final int metroNorthDirection;
 
     /** Whether the current Metro-North trip is peak or not */
-    private final boolean metroNorthPeak;
+    public final boolean metroNorthPeak;
 
     /** Since metro-north doesn't allow inter-line transfers, record which line we are on */
-    private final NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine;
+    public final NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine;
 
     /**
      * Whether the current Metro-North trip is on the New Haven line

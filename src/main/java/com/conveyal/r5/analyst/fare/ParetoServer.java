@@ -171,7 +171,8 @@ public class ParetoServer {
                             boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
                             alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
                             alightStopCoord.getX() / VertexStore.FIXED_FACTOR,
-                            shape
+                            shape,
+                            state.fare.transferAllowance
                             ));
                 }
 
@@ -198,10 +199,11 @@ public class ParetoServer {
         public final double boardStopLon;
         public final double alightStopLat;
         public final double alightStopLon;
+        public final TransferAllowance transferAllowance;
 
         public ParetoLeg(RouteInfo route, String boardStopId, String boardStopName, String alightStopId, String alightStopName,
                          int boardTime, int alightTime, int cumulativeFare, double boardStopLat, double boardStopLon,
-                         double alightStopLat, double alightStopLon, LineString geom) {
+                         double alightStopLat, double alightStopLon, LineString geom, TransferAllowance transferAllowance) {
             this.route = route;
             this.boardStopId = boardStopId;
             this.alightStopId = alightStopId;
@@ -215,6 +217,7 @@ public class ParetoServer {
             this.alightStopLat = alightStopLat;
             this.alightStopLon = alightStopLon;
             this.geom = geom;
+            this.transferAllowance = transferAllowance;
         }
     }
 }
