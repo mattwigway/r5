@@ -23,6 +23,7 @@ public class NYCStaticFareData {
     public static final int EXPRESS_BUS_FARE = 675;
     public static final int EXPRESS_BUS_UPGRADE = 375;
     public static final int METROCARD_TRANSFER_VALIDITY_TIME_SECONDS = 2 * 60 * 60;
+    public static final int METRO_NORTH_MAX_FARE;
 
     public static final TObjectIntMap<NYCPatternType> METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE =
             new TObjectIntHashMap<>();
@@ -63,7 +64,7 @@ public class NYCStaticFareData {
     static {
         readExpressBusRoutes();
         readSubwayTransfers();
-        readMetroNorthFares();
+        METRO_NORTH_MAX_FARE = readMetroNorthFares();
     }
 
     private static void readExpressBusRoutes () {
@@ -82,16 +83,25 @@ public class NYCStaticFareData {
             });
     }
 
-    private static void readMetroNorthFares () {
+    private static int readMetroNorthFares () {
+        int[] maxFare = new int[] {0};
+
         LOG.info("Reading Metro-North fares");
         readCsvFromClasspath("fares/nyc/mnr/mnr_fares.csv", rdr -> {
             String fromStopId = rdr.get("from_stop_id");
             String toStopId = rdr.get("to_stop_id");
             int peakFare = Integer.parseInt(rdr.get("peak"));
             int offpeakFare = Integer.parseInt(rdr.get("offpeak"));
+
+            maxFare[0] = Math.max(peakFare, maxFare[0]);
+            maxFare[0] = Math.max(offpeakFare, maxFare[0]);
+
             mnrPeakFares.computeIfAbsent(fromStopId, k -> new TObjectIntHashMap<>()).put(toStopId, peakFare);
             mnrOffpeakFares.computeIfAbsent(fromStopId, k -> new TObjectIntHashMap<>()).put(toStopId, offpeakFare);
         });
+
+        // return rather than setting directly since max_fare is final
+        return maxFare[0];
     }
 
     /** Read a CSV file from the classpath, calling forEachRow with the CSV reader as a parameter after the reader

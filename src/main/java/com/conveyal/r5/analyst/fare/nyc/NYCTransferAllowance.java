@@ -39,7 +39,7 @@ public class NYCTransferAllowance extends TransferAllowance {
                                 NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine) {
         // only the value needs to be set correctly. The expiration time and number of transfers left are only used in
         // the second domination rule, which we override in atLeastAsGoodForAllFutureRedemptions
-        super(computeMaxTransferAllowance(lirr, metrocardTransferSource), Integer.MAX_VALUE, Integer.MAX_VALUE);
+        super(computeMaxTransferAllowance(lirr, metrocardTransferSource, metroNorthBoardStop), Integer.MAX_VALUE, Integer.MAX_VALUE);
         this.lirr = lirr;
         this.metrocardTransferSource = metrocardTransferSource;
         this.metrocardTransferExpiry = metrocardTransferExpiry;
@@ -57,13 +57,20 @@ public class NYCTransferAllowance extends TransferAllowance {
      * Note that we are adding the max transfer allowance from each different type of ticket, because max transfer
      * allowance is for the entire suffix, and you could conceivably hold multiple transfer slips simultaneously.
      */
-    private static int computeMaxTransferAllowance (LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource) {
+    private static int computeMaxTransferAllowance (LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource, int metroNorthBoardStop) {
         int maxTransferAllowance = 0;
 
         // adding these is correct because you could conceivably get multiple independent transfers from one prefix, e.g.
         // another LIRR transfer and then a metrocard transfer held over from before. Remember in that paper that max
         // transfer allowance is max for any suffix, not for any single transfer.
+        // This is true even though we don't allow transfers between LIRR or MNR vehicles with another
+        // vehicle in between, b/c you could do bus -> grand central -> Harlem-125 -> bus
+        // For LIRR and MNR, we punt on actually computing the max transfer allowance for a particular ticket,
+        // and just return the maximum full fare trip - which is a loose upper bound (they can't discount
+        // the next trip more than it would cost). This is fine for algorithm correctness, although it means retaining
+        // more trips than necessary. You can think of it as a ghost transfer to a train that will never be optimal.
         if (lirr != null) maxTransferAllowance += lirr.getMaxTransferAllowance();
+        if (metroNorthBoardStop > -1) maxTransferAllowance += NYCStaticFareData.METRO_NORTH_MAX_FARE;
         if (metrocardTransferSource != null) {
             maxTransferAllowance +=
                     NYCStaticFareData.METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.get(metrocardTransferSource);
