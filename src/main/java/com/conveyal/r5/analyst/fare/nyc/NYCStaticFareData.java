@@ -26,9 +26,10 @@ public class NYCStaticFareData {
     public static final int NYC_FERRY_FARE = 275;
     public static final int METRO_NORTH_MAX_FARE;
     public static final int BXM4C_FARE = 750;
+    public static final int NICE_FARE = 275;
 
     public static final TObjectIntMap<NYCPatternType> METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE =
-            new TObjectIntHashMap<>();
+            new TObjectIntHashMap<>(10, 0.9f, -1);
 
     static {
         // due to a likely mistake in the NYC transfer system, transferring from a 2.75 subway/bus to a 6.75 express bus
@@ -39,6 +40,8 @@ public class NYCStaticFareData {
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_LOCAL_BUS, 300);
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.STATEN_ISLAND_RWY, 300);
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_EXPRESS_BUS, 275);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_NICE, 300);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_NICE_ONE_TRANSFER, 300);
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(NYCStaticFareData.class);

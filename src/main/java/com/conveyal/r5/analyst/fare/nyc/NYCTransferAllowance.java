@@ -72,8 +72,11 @@ public class NYCTransferAllowance extends TransferAllowance {
         if (lirr != null) maxTransferAllowance += lirr.getMaxTransferAllowance();
         if (metroNorthBoardStop > -1) maxTransferAllowance += NYCStaticFareData.METRO_NORTH_MAX_FARE;
         if (metrocardTransferSource != null) {
-            maxTransferAllowance +=
-                    NYCStaticFareData.METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.get(metrocardTransferSource);
+            int metrocardMaxTransferAllowance = NYCStaticFareData.METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.get(metrocardTransferSource);
+            if (metrocardMaxTransferAllowance < 0) {
+                throw new IllegalStateException("MetroCard max transfer allowance missing for source " + metrocardTransferSource);
+            }
+            maxTransferAllowance += metrocardMaxTransferAllowance;
         }
 
         return maxTransferAllowance;

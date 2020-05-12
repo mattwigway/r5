@@ -164,25 +164,34 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
             // MTA LOCAL BUS
             if (NYCPatternType.METROCARD_LOCAL_BUS.equals(patternType)) {
-                if (metrocardTransferSource == null || boardTime > metrocardTransferExpiry) {
-                    // first ride on the local bus, buy a new ticket
-                    cumulativeFare += NYCStaticFareData.LOCAL_BUS_SUBWAY_FARE;
-                    metrocardTransferSource = NYCPatternType.METROCARD_LOCAL_BUS;
-                    metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
-                } else {
+                if (boardTime <= metrocardTransferExpiry &&
+                        // this is all the metrocard types except METROCARD_NICE_ONE_TRANSFER which does not
+                        // allow transfers to the MTA
+                        (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_SUBWAY.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) ||
+                                NYCPatternType.STATEN_ISLAND_RWY.equals(metrocardTransferSource))) {
                     // use transfer - free transfers to local bus from any MetroCard transferable route
                     // clear transfer information
                     // TODO prohibited bus-bus transfers
                     metrocardTransferSource = null;
                     metrocardTransferExpiry = maxClockTime;
+                } else {
+                    // first ride on the local bus, buy a new ticket
+                    cumulativeFare += NYCStaticFareData.LOCAL_BUS_SUBWAY_FARE;
+                    metrocardTransferSource = NYCPatternType.METROCARD_LOCAL_BUS;
+                    metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
                 }
             }
 
             // MTA EXPRESS BUS
             else if (NYCPatternType.METROCARD_EXPRESS_BUS.equals(patternType)) {
                 if (boardTime <= metrocardTransferExpiry &&
+                        // Everything except METROCARD_EXPRESS_BUS and NICE_ONE_TRANSFER
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_SUBWAY.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) ||
                                 NYCPatternType.STATEN_ISLAND_RWY.equals(metrocardTransferSource))) {
                     // transfer from subway or local bus to express bus, pay upgrade fare and clear transfer allowance
                     cumulativeFare += NYCStaticFareData.EXPRESS_BUS_UPGRADE;
@@ -202,6 +211,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 if (inSubwayPaidArea) continue;
                 if (boardTime <= metrocardTransferExpiry &&
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
+                                NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.STATEN_ISLAND_RWY.equals(metrocardTransferSource))) {
                     // free transfer from bus/SIR to subway, but clear transfer allowance
@@ -231,6 +241,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     if (metrocardTransferSource != null && boardTime <= metrocardTransferExpiry) nFarePayments--;
                     if (nFarePayments == 0) {
                         // transfer was used and no new ticket was purchased
+                        // TODO I think you actually get to keep your transfer in this case?
                         metrocardTransferSource = null;
                         metrocardTransferExpiry = maxClockTime;
                     } else {
@@ -239,6 +250,28 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                         metrocardTransferSource = NYCPatternType.STATEN_ISLAND_RWY;
                         metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
                     }
+                }
+            }
+
+            // NICE BUS
+            // Some special cases here to handle that you get two free transfers to the NICE, but only
+            // one to MTA services
+            else if (NYCPatternType.METROCARD_NICE.equals(patternType)) {
+                if (metrocardTransferSource != null && boardTime <= metrocardTransferExpiry) {
+                    // use the transfer
+                    if (NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource)) {
+                        // if we're transferring NICE -> NICE, we get one more transfer
+                        metrocardTransferSource = NYCPatternType.METROCARD_NICE_ONE_TRANSFER;
+                    } else {
+                        // transfer allowance is consumed
+                        metrocardTransferSource = null;
+                        metrocardTransferExpiry = maxClockTime;
+                    }
+                } else {
+                    // pay new fare
+                    cumulativeFare += NYCStaticFareData.NICE_FARE;
+                    metrocardTransferSource = NYCPatternType.METROCARD_NICE;
+                    metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
                 }
             }
 
@@ -402,6 +435,21 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         METROCARD_LOCAL_BUS,
         /** NYC subway, free within-system transfers, and free transfers to local bus. 3.75 upgrade to Express Bus */
         METROCARD_SUBWAY,
+        /**
+         * Metrocard NICE routes are _almost_ the same as Metrocard local bus, but offer _two_ transfers to add'l NICE buses
+         * At least, that seems to be what the text here implies, but it's not completely clear:
+         * https://www.vsvny.org/vertical/sites/%7BBC0696FB-5DB8-4F85-B451-5A8D9DC581E3%7D/uploads/NICE-n1_Maps_and_Schedules.pdf
+         * "two connecting NICE bus routes" I assume they mean two more after the first one.
+         * We're not handling all rules about where you can transfer.
+         */
+        METROCARD_NICE,
+
+        /**
+         * This is not assigned to any patterns, but is used as a metrocard transfer source after two NICE rides,
+         * to indicate that one more NICE ride is free, but no rides on other services are transfer-eligible.
+         */
+        METROCARD_NICE_ONE_TRANSFER,
+
         /** Staten Island Railway. This is different from the subway because it provides a free transfer to/from all subway lines */
         STATEN_ISLAND_RWY,
         /** MTA Express buses, $6.75 or $3.75 upgrade from local bus (yes, it's cheaper to transfer from local bus) */

@@ -111,6 +111,8 @@ public final class NYCFareDataCache {
                 String routeShortName = transitLayer.routes.get(pat.routeIndex).route_short_name;
                 if (routeShortName.equals("BxM4C")) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.WESTCHESTER_BXM4C;
                 else patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_LOCAL_BUS; // same fare rules as MTA local bus
+            } else if (routeId.startsWith("nice")) {
+                patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_NICE;
             }
 
             if (patternTypeForPattern[i] == null){
