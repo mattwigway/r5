@@ -150,6 +150,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             }
 
             // CHECK FOR SUBWAY SYSTEM EXIT
+            // inSubwayPaidArea refers to whether we were in the subway paid area _before_ this ride at this point.
             // Elvis has left the subway
             if (inSubwayPaidArea) {
                 // If we're still riding the subway, check if it was a behind-gates transfer
@@ -197,7 +198,8 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
 
             // MTA SUBWAY
             else if (NYCPatternType.METROCARD_SUBWAY.equals(patternType)) {
-                if (inSubwayPaidArea) continue; // no fare interaction
+                // if we were already in the subway fare area, no fare interaction, do not pass go, do not collect $200
+                if (inSubwayPaidArea) continue;
                 if (boardTime <= metrocardTransferExpiry &&
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
@@ -329,10 +331,18 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     lirrDirections.add(LIRRTransferAllowance.LIRRDirection.forGtfsDirection(transitLayer.tripPatterns.get(pattern).directionId));
                     lirrPeak.set(lirrRideIndex, fareData.peakLirrPatterns.contains(pattern));
                 }
-            } else {
-                throw new IllegalStateException("Unrecognized pattern type!");
             }
-        }
+
+            // WESTCHESTER BxM4C MANHATTAN EXPRESS
+            // This has a special no-transfer fare, while other Westchester Bee-Line routes are just MetroCard Local Buses
+            else if (NYCPatternType.WESTCHESTER_BXM4C.equals(patternType)) {
+                cumulativeFare += NYCStaticFareData.BXM4C_FARE;
+            }
+
+            else {
+                throw new IllegalStateException("Unrecognized pattern type!");
+            } // END CHAINED IF OVER PATTERN TYPES
+        } // END LOOP OVER RIDES
 
         // IF WE ENDED ON THE LIRR, ADD THE FARE AND RECORD THE FARE SO FAR
         // This also happens in the loop above, when another transit service is ridden after the LIRR, or when
@@ -402,7 +412,12 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
         // TODO currently unused
         LIRR_OFFPEAK, LIRR_PEAK,
         NYC_FERRY,
-        NYC_FERRY_BUS // Free shuttle bus to NYC Ferry terminals
+        NYC_FERRY_BUS, // Free shuttle bus to NYC Ferry terminals
+        /**
+         * The BxM4C is a special express bus to Manhattan with no transfers.
+         * Other Westchester County routes are identical to MTA local buses.
+         */
+        WESTCHESTER_BXM4C
     }
 
     public enum MetroNorthLine {

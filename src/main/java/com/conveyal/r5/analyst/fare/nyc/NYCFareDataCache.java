@@ -107,6 +107,10 @@ public final class NYCFareDataCache {
                 if (routeType == 4) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.NYC_FERRY; // boat
                 else if (routeType == 3) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.NYC_FERRY_BUS; // free shuttle bus
                 else throw new IllegalArgumentException("unexpected route type in NYC Ferry feed");
+            } else if (routeId.startsWith("westchester")) {
+                String routeShortName = transitLayer.routes.get(pat.routeIndex).route_short_name;
+                if (routeShortName.equals("BxM4C")) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.WESTCHESTER_BXM4C;
+                else patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_LOCAL_BUS; // same fare rules as MTA local bus
             }
 
             if (patternTypeForPattern[i] == null){
