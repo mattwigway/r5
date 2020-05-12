@@ -151,10 +151,10 @@ public final class NYCFareDataCache {
                 hist.increment(type);
             }
         }
-        NYCInRoutingFareCalculator.LOG.info("NYC fare pattern types:");
+        LOG.info("NYC fare pattern types:");
         for (TObjectIntIterator<NYCInRoutingFareCalculator.NYCPatternType> it = hist.iterator(); it.hasNext();) {
             it.advance();
-            NYCInRoutingFareCalculator.LOG.info("  {}: {}", it.key(), it.value());
+            LOG.info("  {}: {}", it.key(), it.value());
         }
     }
 
