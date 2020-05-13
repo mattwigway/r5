@@ -149,6 +149,22 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 metroNorthLine = null;
             }
 
+            // ======= PREPARE FOR THIS RIDE =======
+
+            // CLEAR NICE TRANSFER ALLOWANCE IF WE ARE GOING TO RIDE A DIFFERENT SERVICE
+            // All NICE routes have a list of allowable transfers, e.g. see the lower left corner of this schedule:
+            // http://www.nicebus.com/NICE/media/NiceBusPDFSchedules/NICE-n31_MapSchedule.pdf
+            // Implementing these is too complicated, so we just assume that any transfer that can be made on
+            // foot is allowable. But clear the transfer allowance if another service, such as Long Island Railroad,
+            // that doesn't use the MetroCard transfer allowance system, is ridden.
+            if (NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) || NYCPatternType.METROCARD_NICE_ONE_TRANSFER.equals(metrocardTransferSource)) {
+                if (!NYCPatternType.niceTransfers.contains(patternType)) {
+                    // we are riding a service that doesn't provide a NICE discount. Clear the transfer allowance.
+                    metrocardTransferSource = null;
+                    metrocardTransferExpiry = maxClockTime;
+                }
+            }
+
             // CHECK FOR SUBWAY SYSTEM EXIT
             // inSubwayPaidArea refers to whether we were in the subway paid area _before_ this ride at this point.
             // Elvis has left the subway
@@ -427,45 +443,6 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
     @Override
     public String getType() {
         return "nyc";
-    }
-
-    public enum NYCPatternType {
-        // TODO move peakLirrPatterns and allLirrPatterns in here
-        /** A local bus ($2.75), with free transfers to subway or other local bus */
-        METROCARD_LOCAL_BUS,
-        /** NYC subway, free within-system transfers, and free transfers to local bus. 3.75 upgrade to Express Bus */
-        METROCARD_SUBWAY,
-        /**
-         * Metrocard NICE routes are _almost_ the same as Metrocard local bus, but offer _two_ transfers to add'l NICE buses
-         * At least, that seems to be what the text here implies, but it's not completely clear:
-         * https://www.vsvny.org/vertical/sites/%7BBC0696FB-5DB8-4F85-B451-5A8D9DC581E3%7D/uploads/NICE-n1_Maps_and_Schedules.pdf
-         * "two connecting NICE bus routes" I assume they mean two more after the first one.
-         * We're not handling all rules about where you can transfer.
-         */
-        METROCARD_NICE,
-
-        /**
-         * This is not assigned to any patterns, but is used as a metrocard transfer source after two NICE rides,
-         * to indicate that one more NICE ride is free, but no rides on other services are transfer-eligible.
-         */
-        METROCARD_NICE_ONE_TRANSFER,
-
-        /** Staten Island Railway. This is different from the subway because it provides a free transfer to/from all subway lines */
-        STATEN_ISLAND_RWY,
-        /** MTA Express buses, $6.75 or $3.75 upgrade from local bus (yes, it's cheaper to transfer from local bus) */
-        METROCARD_EXPRESS_BUS,
-        STATEN_ISLAND_FERRY,
-        METRO_NORTH_PEAK,
-        METRO_NORTH_OFFPEAK,
-        // TODO currently unused
-        LIRR_OFFPEAK, LIRR_PEAK,
-        NYC_FERRY,
-        NYC_FERRY_BUS, // Free shuttle bus to NYC Ferry terminals
-        /**
-         * The BxM4C is a special express bus to Manhattan with no transfers.
-         * Other Westchester County routes are identical to MTA local buses.
-         */
-        WESTCHESTER_BXM4C
     }
 
     public enum MetroNorthLine {

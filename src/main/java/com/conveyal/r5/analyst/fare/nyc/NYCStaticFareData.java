@@ -15,8 +15,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import static com.conveyal.r5.analyst.fare.nyc.NYCInRoutingFareCalculator.NYCPatternType;
-
 /** A class that contains a bunch of static data about fares in NYC */
 public class NYCStaticFareData {
     public static final int LOCAL_BUS_SUBWAY_FARE = 275;

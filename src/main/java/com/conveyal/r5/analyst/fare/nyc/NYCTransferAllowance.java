@@ -10,7 +10,7 @@ public class NYCTransferAllowance extends TransferAllowance {
     // all these are public so they can be JSON-serialized for the debug interface
 
     public final LIRRTransferAllowance lirr;
-    public final NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource;
+    public final NYCPatternType metrocardTransferSource;
     public final int metrocardTransferExpiry;
 
     public boolean inSubwayPaidArea;
@@ -33,7 +33,7 @@ public class NYCTransferAllowance extends TransferAllowance {
      * lines, see http://www.iridetheharlemline.com/2010/09/22/question-of-the-day-can-i-use-my-ticket-on-other-lines/
      */
 
-    public NYCTransferAllowance(LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource,
+    public NYCTransferAllowance(LIRRTransferAllowance lirr, NYCPatternType metrocardTransferSource,
                                 int metrocardTransferExpiry, boolean inSubwayPaidArea,
                                 int metroNorthBoardStop, int metroNorthDirection, boolean metroNorthPeak,
                                 NYCInRoutingFareCalculator.MetroNorthLine metroNorthLine) {
@@ -57,7 +57,7 @@ public class NYCTransferAllowance extends TransferAllowance {
      * Note that we are adding the max transfer allowance from each different type of ticket, because max transfer
      * allowance is for the entire suffix, and you could conceivably hold multiple transfer slips simultaneously.
      */
-    private static int computeMaxTransferAllowance (LIRRTransferAllowance lirr, NYCInRoutingFareCalculator.NYCPatternType metrocardTransferSource, int metroNorthBoardStop) {
+    private static int computeMaxTransferAllowance (LIRRTransferAllowance lirr, NYCPatternType metrocardTransferSource, int metroNorthBoardStop) {
         int maxTransferAllowance = 0;
 
         // adding these is correct because you could conceivably get multiple independent transfers from one prefix, e.g.

@@ -24,7 +24,7 @@ public final class NYCFareDataCache {
     public final TObjectIntMap<String> transitLayerStopForMnrStop = new TObjectIntHashMap<>();
     public final TIntSet peakLirrPatterns = new TIntHashSet();
     public final TIntSet allLirrPatterns = new TIntHashSet();
-    public NYCInRoutingFareCalculator.NYCPatternType[] patternTypeForPattern;
+    public NYCPatternType[] patternTypeForPattern;
     /** St George and Tompkinsville stops where fare is paid on Staten Island Rwy */
     public final TIntSet statenIslandRwyFareStops = new TIntHashSet();
 
@@ -44,7 +44,7 @@ public final class NYCFareDataCache {
 
 
     public NYCFareDataCache(TransitLayer transitLayer) {
-        patternTypeForPattern = new NYCInRoutingFareCalculator.NYCPatternType[transitLayer.tripPatterns.size()];
+        patternTypeForPattern = new NYCPatternType[transitLayer.tripPatterns.size()];
 
         for (int i = 0; i < transitLayer.stopIdForIndex.size(); i++) {
             // slow but only happens during initialization
@@ -66,13 +66,13 @@ public final class NYCFareDataCache {
                 allLirrPatterns.add(i);
                 if (!pat.routeId.endsWith("offpeak")) {
                     peakLirrPatterns.add(i);
-                    patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.LIRR_PEAK;
+                    patternTypeForPattern[i] = NYCPatternType.LIRR_PEAK;
                 } else {
-                    patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.LIRR_OFFPEAK;
+                    patternTypeForPattern[i] = NYCPatternType.LIRR_OFFPEAK;
                 }
             } else if (routeId.startsWith("mnr")) {
-                if (routeId.endsWith("offpeak")) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METRO_NORTH_OFFPEAK;
-                else patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METRO_NORTH_PEAK;
+                if (routeId.endsWith("offpeak")) patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_OFFPEAK;
+                else patternTypeForPattern[i] = NYCPatternType.METRO_NORTH_PEAK;
 
                 // figure out what line it's on
                 String routeLongName = transitLayer.routes.get(pat.routeIndex).route_long_name;
@@ -89,30 +89,30 @@ public final class NYCFareDataCache {
                 String[] split = routeId.split("_");
                 String rawRouteId = split[split.length - 1]; // the original GTFS route ID
                 if (NYCStaticFareData.expressBusRoutes.contains(rawRouteId)) {
-                    patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_EXPRESS_BUS;
+                    patternTypeForPattern[i] = NYCPatternType.METROCARD_EXPRESS_BUS;
                 } else {
-                    patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_LOCAL_BUS;
+                    patternTypeForPattern[i] = NYCPatternType.METROCARD_LOCAL_BUS;
                 }
             } else if (routeId.startsWith("nyct_subway")) {
                 // Figure out if it's the Staten Island Railway
-                if (routeId.equals("nyct_subway_SI")) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.STATEN_ISLAND_RWY;
-                else patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_SUBWAY;
+                if (routeId.equals("nyct_subway_SI")) patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_RWY;
+                else patternTypeForPattern[i] = NYCPatternType.METROCARD_SUBWAY;
             } else if (routeId.startsWith("si-ferry")) {
-                patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.STATEN_ISLAND_FERRY;
+                patternTypeForPattern[i] = NYCPatternType.STATEN_ISLAND_FERRY;
             } else if (routeId.startsWith("ferry")) {
                 // NYC Ferry
                 // figure out if it's a real ferry, or a free shuttle bus
                 int routeType = transitLayer.routes.get(pat.routeIndex).route_type;
 
-                if (routeType == 4) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.NYC_FERRY; // boat
-                else if (routeType == 3) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.NYC_FERRY_BUS; // free shuttle bus
+                if (routeType == 4) patternTypeForPattern[i] = NYCPatternType.NYC_FERRY; // boat
+                else if (routeType == 3) patternTypeForPattern[i] = NYCPatternType.NYC_FERRY_BUS; // free shuttle bus
                 else throw new IllegalArgumentException("unexpected route type in NYC Ferry feed");
             } else if (routeId.startsWith("westchester")) {
                 String routeShortName = transitLayer.routes.get(pat.routeIndex).route_short_name;
-                if (routeShortName.equals("BxM4C")) patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.WESTCHESTER_BXM4C;
-                else patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_LOCAL_BUS; // same fare rules as MTA local bus
+                if (routeShortName.equals("BxM4C")) patternTypeForPattern[i] = NYCPatternType.WESTCHESTER_BXM4C;
+                else patternTypeForPattern[i] = NYCPatternType.METROCARD_LOCAL_BUS; // same fare rules as MTA local bus
             } else if (routeId.startsWith("nice")) {
-                patternTypeForPattern[i] = NYCInRoutingFareCalculator.NYCPatternType.METROCARD_NICE;
+                patternTypeForPattern[i] = NYCPatternType.METROCARD_NICE;
             }
 
             if (patternTypeForPattern[i] == null){
@@ -145,11 +145,11 @@ public final class NYCFareDataCache {
 
 
         // print stats
-        TObjectIntMap<NYCInRoutingFareCalculator.NYCPatternType> hist = new TObjectIntHashMap<>();
-        for (NYCInRoutingFareCalculator.NYCPatternType type : NYCInRoutingFareCalculator.NYCPatternType
+        TObjectIntMap<NYCPatternType> hist = new TObjectIntHashMap<>();
+        for (NYCPatternType type : NYCPatternType
                 .values()) hist.put(type, 0);
         for (int i = 0; i < patternTypeForPattern.length; i++) {
-            NYCInRoutingFareCalculator.NYCPatternType type = patternTypeForPattern[i];
+            NYCPatternType type = patternTypeForPattern[i];
             if (type == null) {
                 TripPattern pat = transitLayer.tripPatterns.get(i);
                 throw new NullPointerException("Pattern type is null for pattern on route " + pat.routeId);
@@ -158,7 +158,7 @@ public final class NYCFareDataCache {
             }
         }
         LOG.info("NYC fare pattern types:");
-        for (TObjectIntIterator<NYCInRoutingFareCalculator.NYCPatternType> it = hist.iterator(); it.hasNext();) {
+        for (TObjectIntIterator<NYCPatternType> it = hist.iterator(); it.hasNext();) {
             it.advance();
             LOG.info("  {}: {}", it.key(), it.value());
         }
