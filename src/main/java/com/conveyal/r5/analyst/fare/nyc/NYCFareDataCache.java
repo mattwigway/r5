@@ -113,6 +113,8 @@ public final class NYCFareDataCache {
                 else patternTypeForPattern[i] = NYCPatternType.METROCARD_LOCAL_BUS; // same fare rules as MTA local bus
             } else if (routeId.startsWith("nice")) {
                 patternTypeForPattern[i] = NYCPatternType.METROCARD_NICE;
+            } else if (routeId.startsWith("suffolk")) {
+                patternTypeForPattern[i] = NYCPatternType.SUFFOLK;
             }
 
             if (patternTypeForPattern[i] == null){

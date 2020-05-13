@@ -25,6 +25,13 @@ public class NYCStaticFareData {
     public static final int METRO_NORTH_MAX_FARE;
     public static final int BXM4C_FARE = 750;
     public static final int NICE_FARE = 275;
+    public static final int SUFFOLK_FARE = 225;
+    /** 25 cents for a transfer slip on Suffolk Transit */
+    public static final int SUFFOLK_TRANSFER_SLIP = 25;
+    /** 25 cents for a transfer to NICE, _in addition to_ the transfer slip */
+    public static final int SUFFOLK_NICE_TRANSFER = 25;
+    public static final int SUFFOLK_TRANSFER_VALIDITY_TIME_SECONDS = 2 * 60 * 60;
+
 
     public static final TObjectIntMap<NYCPatternType> METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE =
             new TObjectIntHashMap<>(10, 0.9f, -1);
@@ -40,6 +47,8 @@ public class NYCStaticFareData {
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_EXPRESS_BUS, 275);
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_NICE, 300);
         METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.METROCARD_NICE_ONE_TRANSFER, 300);
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.SUFFOLK, 225); // save 2.25 off of NICE fare
+        METROCARD_TRANSFER_ALLOWANCE_FOR_PATTERN_TYPE.put(NYCPatternType.SUFFOLK_ONE_TRANSFER, 250); // save 2.50 off of NICE fare
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(NYCStaticFareData.class);

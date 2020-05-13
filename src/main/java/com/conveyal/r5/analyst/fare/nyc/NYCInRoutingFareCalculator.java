@@ -9,7 +9,12 @@ import gnu.trove.list.array.TIntArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 /**
  * An in-routing fare calculator for East-of-Hudson services in the NYC area.
@@ -181,8 +186,8 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             // MTA LOCAL BUS
             if (NYCPatternType.METROCARD_LOCAL_BUS.equals(patternType)) {
                 if (boardTime <= metrocardTransferExpiry &&
-                        // this is all the metrocard types except METROCARD_NICE_ONE_TRANSFER which does not
-                        // allow transfers to the MTA
+                        // this is all the metrocard types except METROCARD_NICE_ONE_TRANSFER and the
+                        // SUFFOLK ones, which do not allow transfers to the MTA
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_SUBWAY.equals(metrocardTransferSource) ||
@@ -204,7 +209,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
             // MTA EXPRESS BUS
             else if (NYCPatternType.METROCARD_EXPRESS_BUS.equals(patternType)) {
                 if (boardTime <= metrocardTransferExpiry &&
-                        // Everything except METROCARD_EXPRESS_BUS and NICE_ONE_TRANSFER
+                        // Everything except METROCARD_EXPRESS_BUS, NICE_ONE_TRANSFER, and the SUFFOLK types
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_SUBWAY.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) ||
@@ -226,6 +231,7 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                 // if we were already in the subway fare area, no fare interaction, do not pass go, do not collect $200
                 if (inSubwayPaidArea) continue;
                 if (boardTime <= metrocardTransferExpiry &&
+                        // Everything except NICE_ONE_TRANSFER and the SUFFOLK types
                         (NYCPatternType.METROCARD_LOCAL_BUS.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource) ||
                                 NYCPatternType.METROCARD_EXPRESS_BUS.equals(metrocardTransferSource) ||
@@ -279,7 +285,18 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                         // if we're transferring NICE -> NICE, we get one more transfer
                         metrocardTransferSource = NYCPatternType.METROCARD_NICE_ONE_TRANSFER;
                     } else {
-                        // transfer allowance is consumed
+                        if (NYCPatternType.SUFFOLK.equals(metrocardTransferSource)) {
+                            // buy the transfer slip and the upgrade to the NICE fare
+                            cumulativeFare += NYCStaticFareData.SUFFOLK_TRANSFER_SLIP +
+                                    NYCStaticFareData.SUFFOLK_NICE_TRANSFER;
+                        } else if (NYCPatternType.SUFFOLK_ONE_TRANSFER.equals(metrocardTransferSource)) {
+                            // transfer slip already bought, upgrade to NICE fare
+                            cumulativeFare += NYCStaticFareData.SUFFOLK_NICE_TRANSFER;
+                        }
+
+
+                        // transfer allowance is consumed in any case
+                        // Note that NICE_ONE_TRANSFER is implicitly handled here
                         metrocardTransferSource = null;
                         metrocardTransferExpiry = maxClockTime;
                     }
@@ -289,6 +306,37 @@ public class NYCInRoutingFareCalculator extends InRoutingFareCalculator {
                     metrocardTransferSource = NYCPatternType.METROCARD_NICE;
                     metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.METROCARD_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
                 }
+            }
+
+            // SUFFOLK COUNTY TRANSIT
+            else if (NYCPatternType.SUFFOLK.equals(patternType)) {
+                if (NYCPatternType.METROCARD_NICE.equals(metrocardTransferSource)) {
+                    // free transfer from NICE, consume allowance
+                    metrocardTransferSource = null;
+                    metrocardTransferExpiry = maxClockTime;
+                } else if (NYCPatternType.SUFFOLK.equals(metrocardTransferSource)) {
+                    // buy the transfer slip for Suffolk County Transit
+                    cumulativeFare += NYCStaticFareData.SUFFOLK_TRANSFER_SLIP;
+                    metrocardTransferSource = NYCPatternType.SUFFOLK_ONE_TRANSFER; // update to one_transfer allowance
+                    // leave expiration time alone
+                } else if (NYCPatternType.SUFFOLK_ONE_TRANSFER.equals(metrocardTransferSource)) {
+                    // transfer slip already bought, but consume transfer allowance
+                    metrocardTransferSource = null;
+                    metrocardTransferExpiry = maxClockTime;
+                } else {
+                    // Buy an SCT ticket
+                    // Note that Suffolk County Transit does not use the MetroCard system, but it simplifies implementation
+                    // if we treat it like it does. This does prevent a user from holding a Metrocard transfer
+                    // and a Suffolk transfer simultaneously, but I can't imagine why this would be useful.
+                    // Suffolk <-> NICE is handled explicitly, and the other MetroCard services are so far
+                    // from Suffolk County that you would never to Subway -> SCT -> Subway or
+                    // SCT -> Subway -> SCT
+                    cumulativeFare += NYCStaticFareData.SUFFOLK_FARE;
+                    metrocardTransferSource = NYCPatternType.SUFFOLK;
+                    metrocardTransferExpiry = Math.min(boardTime + NYCStaticFareData.SUFFOLK_TRANSFER_VALIDITY_TIME_SECONDS, maxClockTime);
+                }
+
+                // TODO assuming that there is no free transfer from NICE_ONE_TRANSFER?
             }
 
             // STATEN ISLAND FERRY

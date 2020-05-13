@@ -40,7 +40,12 @@ public enum NYCPatternType {
      * The BxM4C is a special express bus to Manhattan with no transfers.
      * Other Westchester County routes are identical to MTA local buses.
      */
-    WESTCHESTER_BXM4C;
+    WESTCHESTER_BXM4C,
+
+    SUFFOLK,
+
+    /** Used after a single transfer on Suffolk County Transit */
+    SUFFOLK_ONE_TRANSFER;
 
     /**
      * The services that you can get a discounted transfer to from NICE. We do this because NICE has
