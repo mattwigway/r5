@@ -3,8 +3,6 @@ package com.conveyal.r5.analyst.fare;
 
 import com.conveyal.gtfs.model.Fare;
 
-import java.util.Set;
-
 /**
 For Pareto searches that include as an optimization criterion monetary cost based on fares, we need to label states
 with information about the potential value of future transfer allowances.  A standard GTFS fare_attribute can include
@@ -25,6 +23,11 @@ public class TransferAllowance {
     public final int number;
     public final int expirationTime;
 
+    /** Return the class of transfer allowance, for Fareto display */
+    public String getType () {
+        return this.getClass().getSimpleName();
+    }
+    
     /**
      * Constructor used for no transfer allowance
       */
@@ -68,13 +71,18 @@ public class TransferAllowance {
     public TransferAllowance tightenExpiration(int maxClockTime){
         // cap expiration time of transfer at max clock time of search, so that transfer slips that technically have more time
         // remaining, but that time cannot be used within the constraints of this search, can be pruned.
-        return new TransferAllowance(this.value, this.number, Math.min(this.expirationTime, maxClockTime));
+
+        // THIS METHOD SHOULD NOT BE USED BECAUSE IT INADVERTENTLY CONVERTS SUBCLASSES INTO REGULAR TRANSFERALLOWANCES
+        // CAUSING PATHS THAT SHOULD NOT BE DISCARDED TO BE DISCARDED!
+        throw new UnsupportedOperationException("tightenExpiration called unsafely. Override in subclasses.");
+
+        //return new TransferAllowance(this.value, this.number, Math.min(this.expirationTime, maxClockTime));
 
     }
 
     /**
      * Is this transfer allowance as good as or better than another transfer allowance? This does not consider the fare
-     * paid so fare, and can be thought of as follows. If you are standing at a stop, and a perfectly trustworthy person
+     * paid so far, and can be thought of as follows. If you are standing at a stop, and a perfectly trustworthy person
      * comes up to you and offers you two tickets, one with this transfer allowance, and one with the other transfer
      * allowance, is this one as good as or better than the other one for any trip that you might make? (Assume you have
      * no moral scruples about obtaining a transfer slip from someone else who is probably not supposed to be giving

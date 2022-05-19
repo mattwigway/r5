@@ -47,11 +47,7 @@ public class Stop {
         name = transitLayer.stopNames.get(stopIdx);
         VertexStore.Vertex vertex = transitLayer.parentNetwork.streetLayer.vertexStore.getCursor();
         vertex.seek(transitLayer.streetVertexForStop.get(stopIdx));
-        if (jitterCoordinates) {
-            com.vividsolutions.jts.geom.Coordinate jitteredCoordinates = PointToPointRouterServer.jitter(vertex);
-            lat = (float) jitteredCoordinates.y;
-            lon = (float) jitteredCoordinates.x;
-        } else if (vertex.index > -1) {
+        if (vertex.index > -1) {
             // TODO: proper way to handle this case is to use original stop lat/lon from the GTFS
             lat = (float) vertex.getLat();
             lon = (float) vertex.getLon();

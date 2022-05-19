@@ -51,6 +51,8 @@ public class FastRaptorWorker {
      */
     public static final int UNREACHED = Integer.MAX_VALUE;
 
+    public static final int SECONDS_PER_MINUTE = 60;
+
     /**
      * Minimum time between alighting from one vehicle and boarding another, in seconds.
      * TODO make this configurable, and use loop-transfers from transfers.txt.

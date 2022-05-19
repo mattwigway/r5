@@ -21,7 +21,14 @@ import org.apache.commons.math3.random.MersenneTwister;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.BitSet;
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
 
@@ -33,13 +40,10 @@ import java.util.function.Supplier;
  * @author mattwigway
  */
 public class McRaptorSuboptimalPathProfileRouter {
-    
+
     private static final Logger LOG = LoggerFactory.getLogger(McRaptorSuboptimalPathProfileRouter.class);
 
     public static final int BOARD_SLACK = 60;
-
-    /** maximum number of rounds (rides) */
-    public static final int MAX_ROUNDS = 4;
 
     public static final int[] EMPTY_INT_ARRAY = new int[0];
 
@@ -72,9 +76,33 @@ public class McRaptorSuboptimalPathProfileRouter {
     /** In order to properly do target pruning we store the best times at each target _by access mode_, so car trips don't quash walk trips */
     private TObjectIntMap<LegMode> bestTimesAtTargetByAccessMode = new TObjectIntHashMap<>(4, 0.95f, Integer.MAX_VALUE);
 
+    /** if saveFinalStates is true, contains the final states for every departure time */
+    public TIntObjectMap<Collection<McRaptorState>> finalStatesByDepartureTime = null;
+
+    public final boolean saveFinalStates;
+
+    /** backwards compatibility */
     public McRaptorSuboptimalPathProfileRouter (TransportNetwork network, ProfileRequest req, Map<LegMode,
             TIntIntMap> accessTimes, Map<LegMode, TIntIntMap> egressTimes, IntFunction<DominatingList> listSupplier,
                                                 InRoutingFareCalculator.Collater collapseParetoSurfaceToTime) {
+        this(network, req, accessTimes, egressTimes, listSupplier, collapseParetoSurfaceToTime, false);
+    }
+
+    /**
+     *
+     * @param network
+     * @param req
+     * @param accessTimes
+     * @param egressTimes
+     * @param listSupplier
+     * @param collapseParetoSurfaceToTime
+     * @param saveFinalStates if true, save the best states by departure time in the field finalStatesByDepartureTime.
+     *                        egressTimes must not be null in this case.
+     */
+    public McRaptorSuboptimalPathProfileRouter (TransportNetwork network, ProfileRequest req, Map<LegMode,
+            TIntIntMap> accessTimes, Map<LegMode, TIntIntMap> egressTimes, IntFunction<DominatingList> listSupplier,
+                                                InRoutingFareCalculator.Collater collapseParetoSurfaceToTime,
+                                                boolean saveFinalStates) {
         this.network = network;
         this.request = req;
         this.accessTimes = accessTimes;
@@ -86,6 +114,9 @@ public class McRaptorSuboptimalPathProfileRouter {
         this.patternsNearDestination = new BitSet(network.transitLayer.tripPatterns.size());
         this.servicesActive = network.transitLayer.getActiveServicesForDate(req.date);
         this.offsets = new FrequencyRandomOffsets(network.transitLayer);
+        this.saveFinalStates = saveFinalStates;
+        if (saveFinalStates) this.finalStatesByDepartureTime = new TIntObjectHashMap<>();
+
         // To make results repeatable from one run to the next, seed with some characteristic of the request itself,
         // e.g. (int) (request.fromLat * 1e9).  Leaving out an argument will make it use a combination of time and
         // the instance's identity hash code, which makes it truly random for all practical purposes.
@@ -96,6 +127,7 @@ public class McRaptorSuboptimalPathProfileRouter {
     public Collection<McRaptorState> route () {
 
         // Modeify does its own pre-computation of accessTimes, but Analysis does not
+        // TODO MWC - I think this can be removed now, I believe analysis now does pre-compute access times.
         if (accessTimes == null) computeAccessTimes();
 
         long startTime = System.currentTimeMillis();
@@ -166,18 +198,21 @@ public class McRaptorSuboptimalPathProfileRouter {
             round++;
 
             // NB the walk search is an initial round, so MAX_ROUNDS + 1
-            while (doOneRound() && round < MAX_ROUNDS + 1);
+            while (doOneRound() && round < request.maxRides + 1);
 
             // TODO this means we wind up with some duplicated states.
             if (egressTimes != null) {
                 // In a PointToPointQuery (for Modeify), egressTimes will already be computed
-                codominatingStatesToBeReturned.addAll(doPropagationToDestination(finalDepartureTime));
+                Collection<McRaptorState> states = doPropagationToDestination(finalDepartureTime);
+                codominatingStatesToBeReturned.addAll(states);
+                if (saveFinalStates) finalStatesByDepartureTime.put(departureTime, states);
             }
+
             if (collapseParetoSurfaceToTime != null) {
                 collateTravelTimes(departureTime);
             }
 
-            LOG.info("minute {} / ~{}", n + 1, request.monteCarloDraws);
+            LOG.info("minute {} / {}", n + 1, request.monteCarloDraws);
         }
 
         LOG.info("McRAPTOR took {}ms", System.currentTimeMillis() - startTime);
@@ -272,7 +307,7 @@ public class McRaptorSuboptimalPathProfileRouter {
         });
 
         // optimization: on the last round, only explore patterns near the destination in a point to point search
-        if (round == MAX_ROUNDS && egressTimes != null)
+        if (round == request.maxRides && egressTimes != null)
             touchedPatterns.and(patternsNearDestination);
 
         for (int patIdx = touchedPatterns.nextSetBit(0); patIdx >= 0; patIdx = touchedPatterns.nextSetBit(patIdx + 1)) {
@@ -309,7 +344,7 @@ public class McRaptorSuboptimalPathProfileRouter {
                 }
 
                 // Perform this check here so we don't needlessly loop over states at a stop that are only created by
-                // getting off this pattern. This optimization may limit the usefulness of  R5 for a strict Class B
+                // getting off this pattern. This optimization may limit the usefulness of R5 for a strict Class B
                 // (touch all stations) Subway Challenge attempt (http://www.gricer.com/anysrc/anysrc.html).
                 boolean stopReachedViaDifferentPattern = bestStatesBeforeRound.containsKey(stop);
 
