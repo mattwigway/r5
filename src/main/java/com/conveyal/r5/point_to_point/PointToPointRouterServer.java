@@ -1,5 +1,6 @@
 package com.conveyal.r5.point_to_point;
 
+import com.conveyal.r5.analyst.fare.ParetoServer;
 import com.conveyal.r5.api.GraphQlRequest;
 import com.conveyal.r5.api.util.BikeRentalStation;
 import com.conveyal.r5.api.util.LegMode;
@@ -8,34 +9,52 @@ import com.conveyal.r5.api.util.Stop;
 import com.conveyal.r5.common.GeoJsonFeature;
 import com.conveyal.r5.common.GeometryUtils;
 import com.conveyal.r5.common.JsonUtilities;
+import com.conveyal.r5.kryo.KryoNetworkSerializer;
 import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.point_to_point.builder.RouterInfo;
-import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.profile.ProfileRequest;
+import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.profile.StreetPath;
-import com.conveyal.r5.streets.*;
+import com.conveyal.r5.streets.DebugRoutingVisitor;
+import com.conveyal.r5.streets.EdgeStore;
+import com.conveyal.r5.streets.Split;
+import com.conveyal.r5.streets.StreetRouter;
+import com.conveyal.r5.streets.TurnRestriction;
+import com.conveyal.r5.streets.VertexStore;
 import com.conveyal.r5.transit.TransportNetwork;
-import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
-import com.vividsolutions.jts.geom.*;
-import com.vividsolutions.jts.operation.buffer.BufferParameters;
-import com.vividsolutions.jts.operation.buffer.OffsetCurveBuilder;
 import gnu.trove.map.TIntIntMap;
 import gnu.trove.set.TIntSet;
-import graphql.ExecutionResult;
-import graphql.GraphQL;
-import graphql.GraphQLException;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.LineString;
+import org.locationtech.jts.geom.PrecisionModel;
+import org.locationtech.jts.operation.buffer.BufferParameters;
+import org.locationtech.jts.operation.buffer.OffsetCurveBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-
 import java.io.File;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static com.conveyal.r5.streets.VertexStore.fixedDegreesToFloating;
 import static com.conveyal.r5.streets.VertexStore.floatingDegreesToFixed;
-import static spark.Spark.*;
+import static spark.Spark.before;
+import static spark.Spark.get;
+import static spark.Spark.post;
+import static spark.Spark.options;
+import static spark.Spark.port;
+import static spark.Spark.staticFileLocation;
 
 /**
  * This will represent point to point search server.
@@ -52,7 +71,7 @@ public class PointToPointRouterServer {
 
     public static final String BUILDER_CONFIG_FILENAME = "build-config.json";
 
-    private static final String USAGE = "It expects --build [path to directory with GTFS and PBF files] to build the graphs\nor --graphs [path to directory with graph] to start the server with provided graph";
+    private static final String USAGE = "It expects --build [path to directory with GTFS and PBF files] to build the graphs\nor --graphs [path to directory with graph] to start the server with provided graph.\n--build --save-shapes [path] will save the shapes in the feed";
 
     public static final int RADIUS_METERS = 200;
 
@@ -63,7 +82,6 @@ public class PointToPointRouterServer {
         final boolean inMemory = false;
 
         if ("--build".equals(commandArguments[0])) {
-
             File dir = new File(commandArguments[1]);
 
             if (!dir.isDirectory() && dir.canRead()) {
@@ -74,7 +92,7 @@ public class PointToPointRouterServer {
             //In memory doesn't save it to disk others do (build, preFlight)
             if (!inMemory) {
                 try {
-                    transportNetwork.write(new File(dir, "network.dat"));
+                    KryoNetworkSerializer.write(transportNetwork, new File(dir, "network.dat"));
                 } catch (Exception e) {
                     LOG.error("An error occurred during saving transit networks. Exiting.", e);
                     System.exit(-1);
@@ -88,7 +106,7 @@ public class PointToPointRouterServer {
             }
             try {
                 LOG.info("Loading transit networks from: {}", dir);
-                TransportNetwork transportNetwork = TransportNetwork.read(new File(dir, "network.dat"));
+                TransportNetwork transportNetwork = KryoNetworkSerializer.read(new File(dir, "network.dat"));
                 transportNetwork.readOSM(new File(dir, "osm.mapdb"));
                 run(transportNetwork);
             } catch (Exception e) {
@@ -103,11 +121,11 @@ public class PointToPointRouterServer {
             }
             try {
                 LOG.info("Loading transit networks from: {}", dir);
-                TransportNetwork transportNetwork = TransportNetwork.read(new File(dir, "network.dat"));
+                TransportNetwork transportNetwork = KryoNetworkSerializer.read(new File(dir, "network.dat"));
                 transportNetwork.readOSM(new File(dir, "osm.mapdb"));
                 transportNetwork.transitLayer.buildDistanceTables(null);
-                transportNetwork.rebuildLinkedGridPointSet();
-                transportNetwork.linkedGridPointSet.pointSet.link(transportNetwork.streetLayer, StreetMode.CAR);
+                // Build WALK and CAR linked pointsets because they are needed for isochrones (which are enabled).
+                transportNetwork.rebuildLinkedGridPointSet(StreetMode.WALK, StreetMode.CAR);
                 run(transportNetwork);
             } catch (Exception e) {
                 LOG.error("An error occurred during the reading or decoding of transit networks", e);
@@ -133,30 +151,7 @@ public class PointToPointRouterServer {
         ObjectReader mapReader = mapper.reader(HashMap.class);
         staticFileLocation("debug-plan");
         PointToPointQuery pointToPointQuery = new PointToPointQuery(transportNetwork);
-
-        //TODO: executor strategies
-        // TODO Clarify why this is generating the GraphQL schema as a function of a point to point query, this is bizarre.
-        // And why is that parameter called "profileResponse" in the GraphQLSchema constructor?
-        GraphQL graphQL = new GraphQL(new com.conveyal.r5.GraphQLSchema(pointToPointQuery).indexSchema);
-        // add cors header
-        before((req, res) -> res.header("Access-Control-Allow-Origin", "*"));
-
-        options("/*", (request, response) -> {
-
-            String accessControlRequestHeaders = request
-                .headers("Access-Control-Request-Headers");
-            if (accessControlRequestHeaders != null) {
-                response.header("Access-Control-Allow-Headers", accessControlRequestHeaders);
-            }
-
-            String accessControlRequestMethod = request
-                .headers("Access-Control-Request-Method");
-            if (accessControlRequestMethod != null) {
-                response.header("Access-Control-Allow-Methods", accessControlRequestMethod);
-            }
-
-            return "OK";
-        });
+        ParetoServer paretoServer = new ParetoServer(transportNetwork);
 
         get("/metadata", (request, response) -> {
             response.header("Content-Type", "application/json");
@@ -192,7 +187,7 @@ public class PointToPointRouterServer {
 
             streetRouter.profileRequest = profileRequest;
             streetRouter.streetMode = streetMode;
-            streetRouter.timeLimitSeconds = profileRequest.getTimeLimit(LegMode.valueOf(streetMode.toString()));
+            streetRouter.timeLimitSeconds = profileRequest.getMaxTimeSeconds(LegMode.valueOf(streetMode.toString()));
             streetRouter.quantityToMinimize = StreetRouter.State.RoutingVariable.DURATION_SECONDS;
             streetRouter.transitStopSearch = true;
             if(streetRouter.setOrigin(profileRequest.fromLat, profileRequest.fromLon)) {
@@ -251,7 +246,7 @@ public class PointToPointRouterServer {
 
             streetRouter.profileRequest = profileRequest;
             streetRouter.streetMode = streetMode;
-            streetRouter.timeLimitSeconds = profileRequest.getTimeLimit(LegMode.valueOf(streetMode.toString()));
+            streetRouter.timeLimitSeconds = profileRequest.getMaxTimeSeconds(LegMode.valueOf(streetMode.toString()));
             streetRouter.quantityToMinimize = StreetRouter.State.RoutingVariable.DURATION_SECONDS;
             streetRouter.flagSearch = VertexStore.VertexFlag.BIKE_SHARING;
             streetRouter.flagSearchQuantity = 50;
@@ -261,7 +256,6 @@ public class PointToPointRouterServer {
                     VertexStore.Vertex bikeShareVertex = transportNetwork.streetLayer.vertexStore.getCursor(vertexIdx);
                     BikeRentalStation bikeRentalStation = transportNetwork.streetLayer.bikeRentalStationMap.get(vertexIdx);
                     GeoJsonFeature feature = new GeoJsonFeature(bikeShareVertex.getLon(), bikeShareVertex.getLat());
-                    feature.addProperty("weight", state.weight);
                     if (bikeRentalStation != null) {
                         feature.addProperty("name", bikeRentalStation.name);
                         feature.addProperty("id", bikeRentalStation.id);
@@ -307,7 +301,7 @@ public class PointToPointRouterServer {
 
             streetRouter.profileRequest = profileRequest;
             streetRouter.streetMode = streetMode;
-            streetRouter.timeLimitSeconds = profileRequest.getTimeLimit(LegMode.valueOf(streetMode.toString()));
+            streetRouter.timeLimitSeconds = profileRequest.getMaxTimeSeconds(LegMode.valueOf(streetMode.toString()));
             streetRouter.quantityToMinimize = StreetRouter.State.RoutingVariable.DURATION_SECONDS;
             streetRouter.flagSearch = VertexStore.VertexFlag.PARK_AND_RIDE;
             streetRouter.flagSearchQuantity = 50;
@@ -316,7 +310,6 @@ public class PointToPointRouterServer {
                 streetRouter.getReachedVertices(VertexStore.VertexFlag.PARK_AND_RIDE).forEachEntry((vertexIdx, state) -> {
                     VertexStore.Vertex stopVertex = transportNetwork.streetLayer.vertexStore.getCursor(vertexIdx);
                     GeoJsonFeature feature = new GeoJsonFeature(stopVertex.getLon(), stopVertex.getLat());
-                    feature.addProperty("weight", state.weight);
                     //feature.addProperty("name", transportNetwork.transitLayer.stopNames.get(stopIdx));
                     feature.addProperty("type", "park_ride");
                     feature.addProperty("mode", "CAR");
@@ -495,7 +488,7 @@ public class PointToPointRouterServer {
             Map<String, Object> featureCollection = new HashMap<>(2);
             featureCollection.put("type", "FeatureCollection");
 
-            Collection<Stop> stops = transportNetwork.transitLayer.findStopsInEnvelope(env);
+            Collection<Stop> stops = transportNetwork.transitLayer.findApiStopsInEnvelope(env);
             List<GeoJsonFeature> features = new ArrayList<>(stops.size());
 
             stops.forEach(stop -> {
@@ -935,43 +928,7 @@ public class PointToPointRouterServer {
 
         }, JsonUtilities.objectMapper::writeValueAsString);
 
-        post("/otp/routers/default/index/graphql", ((request, response) -> {
-            response.type("application/json");
-
-            HashMap<String, Object> content = new HashMap<>();
-            try {
-                GraphQlRequest graphQlRequest = graphQlRequestReader
-                    .readValue(request.body());
-
-                //TODO: deserialize variables map automatically in GraphQLRequest object
-                //FIXME: here only flat variables are supported. For example directModes:[CAR, WALK] is unsupported for now since it can't be deserialized
-                Map<String, Object> variables = graphQlRequest.variables==null ? new HashMap<>() : mapReader.readValue(graphQlRequest.variables);
-                ExecutionResult executionResult = graphQL.execute(graphQlRequest.query, null, null, variables);
-                response.status(200);
-
-                if (!executionResult.getErrors().isEmpty()) {
-                    response.status(500);
-                    content.put("errors", executionResult.getErrors());
-                }
-                if (executionResult.getData() != null) {
-                    content.put("data", executionResult.getData());
-                }
-            } catch (JsonParseException jpe) {
-                response.status(400);
-                content.put("errors", "Problem parsing query: " + jpe.getMessage());
-            } catch (GraphQLException ql) {
-                response.status(500);
-                content.put("errors", ql.getMessage());
-                LOG.error("GraphQL problem:", ql);
-            } catch (Exception e) {
-                response.status(500);
-                content.put("errors", e.getMessage());
-                LOG.error("Unknown error:", e);
-            }
-            return content;
-
-        }), JsonUtilities.objectMapper::writeValueAsString);
-
+        post("/pareto", paretoServer::handle);
     }
 
     /**
@@ -1129,7 +1086,6 @@ public class PointToPointRouterServer {
                 EdgeStore.Edge edge = transportNetwork.streetLayer.edgeStore
                     .getCursor(edgeIdx);
                 GeoJsonFeature feature = new GeoJsonFeature(edge.getGeometry());
-                feature.addProperty("weight", state.weight);
                 feature.addProperty("mode", state.streetMode);
                 feature.addProperty("distance", state.distance/1000);
                 feature.addProperty("idx", stateIdx++);
