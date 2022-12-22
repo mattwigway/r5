@@ -69,12 +69,22 @@ public class McRaptorSuboptimalPathProfileRouter {
     private IntFunction<DominatingList> listSupplier;
     private MersenneTwister mersenneTwister;
 
+    public final boolean saveFinalStates;
+    /** if saveFinalStates is true, contains the final states for every departure time */
+    public TIntObjectMap<Collection<McRaptorState>> finalStatesByDepartureTime = null;
+
     /** In order to properly do target pruning we store the best times at each target _by access mode_, so car trips don't quash walk trips */
     private TObjectIntMap<LegMode> bestTimesAtTargetByAccessMode = new TObjectIntHashMap<>(4, 0.95f, Integer.MAX_VALUE);
 
     public McRaptorSuboptimalPathProfileRouter (TransportNetwork network, ProfileRequest req, Map<LegMode,
             TIntIntMap> accessTimes, Map<LegMode, TIntIntMap> egressTimes, IntFunction<DominatingList> listSupplier,
                                                 InRoutingFareCalculator.Collater collapseParetoSurfaceToTime) {
+            this(network, req, accessTimes, egressTimes, listSupplier, collapseParetoSurfaceToTime, false); 
+    }
+
+    public McRaptorSuboptimalPathProfileRouter (TransportNetwork network, ProfileRequest req, Map<LegMode,
+            TIntIntMap> accessTimes, Map<LegMode, TIntIntMap> egressTimes, IntFunction<DominatingList> listSupplier,
+                                                InRoutingFareCalculator.Collater collapseParetoSurfaceToTime, boolean saveFinalStates) {
         this.network = network;
         this.request = req;
         this.accessTimes = accessTimes;
@@ -86,6 +96,8 @@ public class McRaptorSuboptimalPathProfileRouter {
         this.patternsNearDestination = new BitSet(network.transitLayer.tripPatterns.size());
         this.servicesActive = network.transitLayer.getActiveServicesForDate(req.date);
         this.offsets = new FrequencyRandomOffsets(network.transitLayer);
+        this.saveFinalStates = saveFinalStates;
+        if (saveFinalStates) this.finalStatesByDepartureTime = new TIntObjectHashMap<>();
         // To make results repeatable from one run to the next, seed with some characteristic of the request itself,
         // e.g. (int) (request.fromLat * 1e9).  Leaving out an argument will make it use a combination of time and
         // the instance's identity hash code, which makes it truly random for all practical purposes.
@@ -171,7 +183,9 @@ public class McRaptorSuboptimalPathProfileRouter {
             // TODO this means we wind up with some duplicated states.
             if (egressTimes != null) {
                 // In a PointToPointQuery (for Modeify), egressTimes will already be computed
-                codominatingStatesToBeReturned.addAll(doPropagationToDestination(finalDepartureTime));
+                Collection<McRaptorState> states = doPropagationToDestination(finalDepartureTime);
+                codominatingStatesToBeReturned.addAll(states);
+                if (saveFinalStates) finalStatesByDepartureTime.put(departureTime, states);
             }
             if (collapseParetoSurfaceToTime != null) {
                 collateTravelTimes(departureTime);

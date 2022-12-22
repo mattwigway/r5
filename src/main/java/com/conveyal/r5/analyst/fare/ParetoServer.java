@@ -1,6 +1,5 @@
 package com.conveyal.r5.analyst.fare;
 
-import com.conveyal.r5.SoftwareVersion;
 import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.common.GeometryUtils;
 import com.conveyal.r5.common.JsonUtilities;
@@ -12,8 +11,8 @@ import com.conveyal.r5.transit.TransportNetwork;
 import com.conveyal.r5.transit.TripPattern;
 import gnu.trove.iterator.TIntObjectIterator;
 import gnu.trove.map.TIntIntMap;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.LineString;
+import com.vividsolutions.jts.geom.Coordinate;
+import com.vividsolutions.jts.geom.LineString;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import spark.Request;
@@ -60,7 +59,7 @@ public class ParetoServer {
                         // while I appreciate the use of symbolic constants, I certainly hope the number of seconds per
                         // minute does not change
                         // in fact, we have been moving in the opposite direction with leap-second smearing
-                        departureTime + profileRequest.maxTripDurationMinutes * FastRaptorWorker.SECONDS_PER_MINUTE);
+                        departureTime + profileRequest.maxTripDurationMinutes * 60);
         McRaptorSuboptimalPathProfileRouter mcraptor = new McRaptorSuboptimalPathProfileRouter(
                 transportNetwork,
                 profileRequest,
@@ -123,7 +122,7 @@ public class ParetoServer {
         public final Collection<ParetoTrip> trips;
         public final long computeTimeMillis;
         /** save backend version in JSON output - useful for JSON that's being pushed to fareto-examples */
-        public SoftwareVersion backendVersion = SoftwareVersion.instance;
+//        public SoftwareVersion backendVersion = SoftwareVersion.instance;
         public String generationTime = LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME);
 
         public ParetoReturn(ProfileRequest request, Collection<ParetoTrip> trips, long computeTimeMillis) {
@@ -159,15 +158,15 @@ public class ParetoServer {
                         int destTime = state.time;
 
                         LineString geom = GeometryUtils.geometryFactory.createLineString(new Coordinate[] {
-                                new Coordinate(originStopCoord.getX() / VertexStore.FIXED_FACTOR, originStopCoord.getY() / VertexStore.FIXED_FACTOR),
-                                new Coordinate(destStopCoord.getX() / VertexStore.FIXED_FACTOR, destStopCoord.getY() / VertexStore.FIXED_FACTOR),
+                                new Coordinate(originStopCoord.x / VertexStore.FIXED_FACTOR, originStopCoord.y / VertexStore.FIXED_FACTOR),
+                                new Coordinate(destStopCoord.x / VertexStore.FIXED_FACTOR, destStopCoord.y / VertexStore.FIXED_FACTOR),
                         });
 
                         legs.add(new ParetoTransferLeg(
-                                originStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                                originStopCoord.getX() / VertexStore.FIXED_FACTOR,
-                                destStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                                destStopCoord.getX() / VertexStore.FIXED_FACTOR,
+                                originStopCoord.y / VertexStore.FIXED_FACTOR,
+                                originStopCoord.x / VertexStore.FIXED_FACTOR,
+                                destStopCoord.y / VertexStore.FIXED_FACTOR,
+                                destStopCoord.x / VertexStore.FIXED_FACTOR,
                                 geom,
                                 originTime,
                                 destTime,
@@ -201,10 +200,10 @@ public class ParetoServer {
                                 network.transitLayer.stopIdForIndex.get(boardStopIndex), network.transitLayer.stopNames.get(boardStopIndex),
                                 network.transitLayer.stopIdForIndex.get(alightStopIndex), network.transitLayer.stopNames.get(alightStopIndex),
                                 state.boardTime, state.time, state.fare.cumulativeFarePaid,
-                                boardStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                                boardStopCoord.getX() / VertexStore.FIXED_FACTOR,
-                                alightStopCoord.getY() / VertexStore.FIXED_FACTOR,
-                                alightStopCoord.getX() / VertexStore.FIXED_FACTOR, shape, state.fare.transferAllowance));
+                                boardStopCoord.y / VertexStore.FIXED_FACTOR,
+                                boardStopCoord.x / VertexStore.FIXED_FACTOR,
+                                alightStopCoord.y / VertexStore.FIXED_FACTOR,
+                                alightStopCoord.x / VertexStore.FIXED_FACTOR, shape, state.fare.transferAllowance));
                     }
 
 

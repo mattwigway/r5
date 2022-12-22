@@ -2,7 +2,6 @@ package com.conveyal.r5.streets;
 
 import com.conveyal.r5.api.util.LegMode;
 import com.conveyal.r5.common.SphericalDistanceLibrary;
-import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.profile.ProfileRequest;
 import com.conveyal.r5.transit.TransitLayer;
@@ -58,7 +57,7 @@ public class StreetRouter {
     /**
      * How many transit stops should we find
      */
-    public int transitStopSearchQuantity = PointToPointQuery.MAX_ACCESS_STOPS;
+    public int transitStopSearchQuantity = 120;
 
     /**
      * How many vertices with flags should we find

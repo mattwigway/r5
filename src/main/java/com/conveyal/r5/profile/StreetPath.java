@@ -1,7 +1,6 @@
 package com.conveyal.r5.profile;
 
 import com.conveyal.r5.api.util.LegMode;
-import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.streets.EdgeStore;
 import com.conveyal.r5.streets.StreetRouter;
 import com.conveyal.r5.transit.TransportNetwork;
@@ -183,7 +182,7 @@ public class StreetPath {
             LOG.debug("Will add {}m to {}m = {}m", lastState.distance / 1000, distance / 1000,
                 (distance + lastState.distance) / 1000);
             distance += lastState.distance;
-            duration += lastState.getDurationSeconds()+ PointToPointQuery.CAR_PARK_DROPOFF_TIME_S;
+            duration += lastState.getDurationSeconds()+ 120;
         }
     }
 }

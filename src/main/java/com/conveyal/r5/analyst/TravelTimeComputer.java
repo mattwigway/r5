@@ -5,7 +5,6 @@ import com.conveyal.r5.analyst.cluster.AnalysisTask;
 import com.conveyal.r5.analyst.cluster.PathWriter;
 import com.conveyal.r5.analyst.fare.InRoutingFareCalculator;
 import com.conveyal.r5.api.util.LegMode;
-import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.profile.DominatingList;
 import com.conveyal.r5.profile.FareDominatingList;
 import com.conveyal.r5.profile.FastRaptorWorker;
@@ -142,21 +141,22 @@ public class TravelTimeComputer {
                 // If multiple P+Rs reach the same stop, only one with shortest time is returned. Stops were searched for during graph building phase.
                 // time to stop is time from CAR streetrouter to stop + CAR PARK time + time to walk to stop based on request walk speed
                 // by default 20 CAR PARKS are found it can be changed with sr.maxVertices variable
-                sr = PointToPointQuery.findParkRidePath(request, sr, network.transitLayer);
+                // sr = PointToPointQuery.findParkRidePath(request, sr, network.transitLayer);
 
-                if (sr == null) {
-                    // Origin not found. Return an empty access times map, as is done by the other conditions for other modes.
-                    // FIXME this is ugly. we should have a way to break out of the search early (here and in other methods).
-                    // It causes regional analyses to be very slow when there are a large number of disconnected cells.
-                    accessTimes = new TIntIntHashMap();
-                } else {
-                    accessTimes = sr.getReachedStops();
-                }
+                // if (sr == null) {
+                //     // Origin not found. Return an empty access times map, as is done by the other conditions for other modes.
+                //     // FIXME this is ugly. we should have a way to break out of the search early (here and in other methods).
+                //     // It causes regional analyses to be very slow when there are a large number of disconnected cells.
+                //     accessTimes = new TIntIntHashMap();
+                // } else {
+                //     accessTimes = sr.getReachedStops();
+                // }
 
-                // disallow non-transit access
-                // TODO should we allow non transit access with park and ride?
-                nonTransitTravelTimesToDestinations = new int[accessModeLinkedDestinations.size()];
-                Arrays.fill(nonTransitTravelTimesToDestinations, FastRaptorWorker.UNREACHED);
+                // // disallow non-transit access
+                // // TODO should we allow non transit access with park and ride?
+                // nonTransitTravelTimesToDestinations = new int[accessModeLinkedDestinations.size()];
+                // Arrays.fill(nonTransitTravelTimesToDestinations, FastRaptorWorker.UNREACHED);
+                throw new UnsupportedOperationException("CAR_PARK hacked out to get old R5 working");
             } else if (accessMode == StreetMode.WALK) {
                 // Special handling for walk search, find distance in seconds and divide to match behavior at egress
                 // (in stop trees). For bike/car searches this is immaterial as the access searches are already asymmetric.

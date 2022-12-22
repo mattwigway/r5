@@ -1,7 +1,6 @@
 package com.conveyal.r5.streets;
 
 import com.conveyal.r5.api.util.ParkRideParking;
-import com.conveyal.r5.point_to_point.builder.PointToPointQuery;
 import com.conveyal.r5.profile.StreetMode;
 import com.conveyal.r5.transit.TransitLayer;
 import gnu.trove.list.TIntList;
@@ -55,7 +54,7 @@ public class ParkRideRouter extends StreetRouter {
                 int stopStreetVertexIdx = transitLayer.streetVertexForStop.get(toStop);
                 int timeToStop = (int) (distanceMillimeters / walkSpeedMillimetersPerSecond);
                 int totalTime =
-                    timeToParkRide + timeToStop + PointToPointQuery.CAR_PARK_DROPOFF_TIME_S;
+                    timeToParkRide + timeToStop + 120;
                 // Adds time to to get to this stop and saves from which P+R we get from STOP
                 // if this is the first time we see the stop
                 if (!transitStopIndexDurationMap.containsKey(toStop)) {
