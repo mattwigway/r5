@@ -183,7 +183,11 @@ public class BostonInRoutingFareCalculator extends InRoutingFareCalculator {
                 .McRaptorState state, TransitLayer transitLayer){
             String fromStation = transitLayer.parentStationIdForStop.get(fromStopIndex);
             int toStopIndex = state.stop;
-            String toStation = transitLayer.parentStationIdForStop.get(toStopIndex);
+            // we get an error here for the egress to the destination in point-to-point mode, because
+            // in the original Charlie paper we never ran this in point to point mode. stop = -1 means
+            // the destination, which is not inside a station, and we will have exited the subway.
+            String toStation = toStopIndex != -1 ? transitLayer.parentStationIdForStop.get(toStopIndex) : null;
+
             if (platformsConnected(fromStopIndex, fromStation, toStopIndex, toStation)) {
                 // Have not exited subway through fare gates; maintain transfer privilege
                 return this;
