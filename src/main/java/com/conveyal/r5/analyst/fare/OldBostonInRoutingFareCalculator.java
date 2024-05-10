@@ -69,7 +69,7 @@ public class OldBostonInRoutingFareCalculator extends InRoutingFareCalculator {
             "place-dwnxg", "place-pktrm"))));
 
     // Logging to facilitate debugging
-    private static final Logger LOG = LoggerFactory.getLoggerOldBostonInRoutingFareCalculator.class);
+    private static final Logger LOG = LoggerFactory.getLogger(OldBostonInRoutingFareCalculator.class);
 
     private MersenneTwister logRandomizer = LOG_FARES ? new MersenneTwister() : null;
 
@@ -244,7 +244,7 @@ public class OldBostonInRoutingFareCalculator extends InRoutingFareCalculator {
                 if (fares == null){
                     synchronized (fareSystemCache) {
                         FareSystemWrapper fareSystem = fareSystemCache.computeIfAbsent(this.transitLayer,
-                               OldBostonInRoutingFareCalculator::loadFaresFromGTFS);
+                                OldBostonInRoutingFareCalculator::loadFaresFromGTFS);
                         this.fares = fareSystem.fares;
                         this.fares.defaultFare = DEFAULT_FARE_ID;
                     }
