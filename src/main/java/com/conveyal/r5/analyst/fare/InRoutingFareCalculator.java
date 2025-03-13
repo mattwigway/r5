@@ -24,7 +24,7 @@ import java.util.function.ToIntFunction;
 @JsonTypeInfo(use=JsonTypeInfo.Id.NAME, include=JsonTypeInfo.As.PROPERTY, property="type")
 @JsonSubTypes({
         @JsonSubTypes.Type(name = "boston", value = BostonInRoutingFareCalculator.class),
-        @JsonSubTypes.Type(name = "oldboston", value = BostonInRoutingFareCalculator.class),
+        @JsonSubTypes.Type(name = "oldboston", value = OldBostonInRoutingFareCalculator.class),
         @JsonSubTypes.Type(name = "bogota", value = BogotaInRoutingFareCalculator.class),
         @JsonSubTypes.Type(name = "chicago", value = ChicagoInRoutingFareCalculator.class),
         @JsonSubTypes.Type(name = "simple", value = SimpleInRoutingFareCalculator.class)
